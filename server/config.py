@@ -31,7 +31,7 @@ class MapConfig:
     COLOR_PATH = (150, 150, 200)         # Trail del camino recorrido
     
     # Cámara
-    INITIAL_ZOOM = 1.0         # Zoom inicial
+    INITIAL_ZOOM = 5.0         # Zoom inicial
     ZOOM_SPEED = 0.1           # Velocidad de zoom con scroll
     MIN_ZOOM = 0.2             # Zoom mínimo
     MAX_ZOOM = 5.0             # Zoom máximo

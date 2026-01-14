@@ -33,12 +33,12 @@ class MapRenderer:
             if os.path.exists(sprite_path):
                 # Load and scale sprite
                 original = pygame.image.load(sprite_path)
-                size = int(MapConfig.CELL_PIXEL_SIZE * 0.3)  # 80% of cell size
+                size = int(MapConfig.CELL_PIXEL_SIZE * 0.4)  # 40% of cell size
                 scaled = pygame.transform.scale(original, (size, size))
                 sprites[direction] = scaled
             else:
                 # Create placeholder if sprite not found
-                size = int(MapConfig.CELL_PIXEL_SIZE * 0.3)
+                size = int(MapConfig.CELL_PIXEL_SIZE * 0.4)
                 placeholder = pygame.Surface((size, size), pygame.SRCALPHA)
                 
                 # Draw arrow shape based on direction
@@ -172,7 +172,7 @@ class MapRenderer:
         sprite = self.sprites[sprite_key]
         
         # Scale sprite based on zoom
-        scaled_size = int(MapConfig.CELL_PIXEL_SIZE * 0.8 * self.camera.zoom)
+        scaled_size = int(MapConfig.CELL_PIXEL_SIZE * 0.4 * self.camera.zoom)
         if scaled_size > 5:  # Only draw if visible
             scaled_sprite = pygame.transform.scale(sprite, (scaled_size, scaled_size))
             
