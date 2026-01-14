@@ -3,9 +3,6 @@ Map state manager - handles the grid, bot position, walls, and exploration
 """
 
 from statistics import median
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from config import MapConfig
 
 class MapState:
@@ -107,12 +104,26 @@ class MapState:
         Actualizar sensores y detectar cambios
         Retorna dict con eventos detectados
         """
+        # Guardar heading anterior para detectar si hubo rotación
+        previous_heading = self.bot_heading
         self.bot_heading = heading
+        
         events = {
             'new_walls': [],
             'new_paths': [],
-            'movement': None
+            'movement': None,
+            'rotation': previous_heading != heading
         }
+        
+        # Si hubo rotación, limpiar historial de sensores (apuntan a nuevas direcciones)
+        if events['rotation']:
+            if MapConfig.DEBUG_MODE:
+                print(f"🔄 Rotación detectada: {previous_heading} → {heading}")
+            # Resetear historial porque los sensores apuntan a direcciones diferentes
+            for sensor_name in ['front', 'left', 'right']:
+                self.sensor_history[sensor_name] = []
+                self.stable_values[sensor_name] = None
+            self.accumulated_movement = 0  # Reset accumulated movement on rotation
         
         # Agregar lecturas al historial
         self.add_sensor_reading('front', front)
@@ -148,8 +159,8 @@ class MapState:
             # Actualizar valor estable
             self.stable_values[sensor_name] = new_stable
         
-        # Detectar movimiento (si sensor frontal disminuye consistentemente)
-        if self.stable_values['front'] is not None:
+        # Detectar movimiento SOLO si NO hubo rotación
+        if self.stable_values['front'] is not None and not events['rotation']:
             events['movement'] = self._detect_movement()
         
         # Marcar celda actual como explorada
