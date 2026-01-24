@@ -1,9 +1,10 @@
 """
 Simple graph renderer for checkpoint visualization
-Dibuja nodos (checkpoints) y sus conexiones
+Dibuja nodos (checkpoints) y sus conexiones con estilo anti-aliased
 """
 
 import pygame
+import pygame.gfxdraw
 import math
 from config import Config
 from graph_state import MazeGraph, DirectionState, Cardinal
@@ -18,8 +19,9 @@ class GraphRenderer:
         self.graph = graph
         
         # Fuentes
-        self.font = pygame.font.Font(None, Config.FONT_SIZE)
-        self.font_small = pygame.font.Font(None, Config.FONT_SIZE_SMALL)
+        pygame.font.init()
+        self.font = pygame.font.SysFont('Arial', Config.FONT_SIZE, bold=True)
+        self.font_small = pygame.font.SysFont('Arial', Config.FONT_SIZE_SMALL)
     
     def draw(self):
         """Dibuja todo el grafo"""
@@ -36,23 +38,38 @@ class GraphRenderer:
         self._draw_ui()
     
     def _draw_connections(self):
-        """Dibuja las conexiones entre checkpoints"""
+        """Dibuja las conexiones entre checkpoints con anti-aliasing"""
         connections = self.graph.get_connection_endpoints()
         
         for x1, y1, x2, y2 in connections:
             screen_pos1 = self.camera.world_to_screen(x1, y1)
             screen_pos2 = self.camera.world_to_screen(x2, y2)
             
-            pygame.draw.line(
-                self.screen,
-                Config.COLOR_CONNECTION,
+            # Línea más gruesa con anti-aliasing
+            width = max(2, int(4 * self.camera.zoom))
+            
+            # Dibujar línea suavizada
+            self._draw_smooth_line(
                 screen_pos1,
                 screen_pos2,
-                max(1, int(3 * self.camera.zoom))
+                Config.COLOR_CONNECTION,
+                width
             )
     
+    def _draw_smooth_line(self, start, end, color, width):
+        """Dibuja una línea suavizada"""
+        # Para líneas más gruesas, dibujar múltiples líneas anti-aliased
+        if width <= 2:
+            pygame.draw.aaline(self.screen, color, start, end)
+        else:
+            # Línea base (sin anti-alias para grosor)
+            pygame.draw.line(self.screen, color, start, end, width)
+            # Borde suavizado
+            lighter = tuple(min(255, c + 40) for c in color[:3])
+            pygame.draw.aaline(self.screen, lighter, start, end)
+    
     def _draw_checkpoints(self):
-        """Dibuja todos los checkpoints"""
+        """Dibuja todos los checkpoints con anti-aliasing"""
         for checkpoint in self.graph.get_all_checkpoints():
             screen_x, screen_y = self.camera.world_to_screen(
                 checkpoint.render_x, checkpoint.render_y
@@ -66,30 +83,36 @@ class GraphRenderer:
             else:
                 color = Config.COLOR_CHECKPOINT_NORMAL
             
-            # Dibujar círculo del checkpoint
+            # Dibujar círculo del checkpoint con anti-aliasing
             radius = max(5, int(Config.CHECKPOINT_RADIUS * self.camera.zoom))
-            pygame.draw.circle(self.screen, color, (screen_x, screen_y), radius)
             
-            # Borde
-            pygame.draw.circle(self.screen, (255, 255, 255), (screen_x, screen_y), radius, 2)
+            # Círculo relleno con anti-aliasing
+            pygame.gfxdraw.filled_circle(self.screen, screen_x, screen_y, radius, color)
+            pygame.gfxdraw.aacircle(self.screen, screen_x, screen_y, radius, color)
+            
+            # Borde blanco suavizado
+            border_color = (255, 255, 255)
+            pygame.gfxdraw.aacircle(self.screen, screen_x, screen_y, radius, border_color)
+            pygame.gfxdraw.aacircle(self.screen, screen_x, screen_y, radius - 1, border_color)
             
             # Dibujar indicadores de direcciones
             self._draw_direction_indicators(checkpoint, screen_x, screen_y, radius)
             
             # ID del checkpoint (si está habilitado)
             if Config.SHOW_IDS and self.camera.zoom > 0.5:
-                text = self.font_small.render(f"#{checkpoint.id}", True, (255, 255, 255))
+                text = self.font_small.render(f"{checkpoint.id}", True, (0, 0, 0), color)
+                text.set_alpha(200)
                 text_rect = text.get_rect(center=(screen_x, screen_y))
                 self.screen.blit(text, text_rect)
     
     def _draw_direction_indicators(self, checkpoint, cx, cy, radius):
-        """Dibuja indicadores visuales de las direcciones del checkpoint"""
-        if self.camera.zoom < 0.6:
+        """Dibuja indicadores visuales de las direcciones del checkpoint con anti-aliasing"""
+        if self.camera.zoom < 0.5:
             return  # No dibujar si el zoom es muy pequeño
         
         # Offset para los indicadores (fuera del círculo)
-        indicator_offset = radius + 15
-        indicator_size = max(4, int(8 * self.camera.zoom))
+        indicator_offset = int(radius + 18)
+        indicator_size = max(5, int(10 * self.camera.zoom))
         
         # Mapeo de direcciones a offsets
         direction_offsets = {
@@ -101,8 +124,8 @@ class GraphRenderer:
         
         for direction, state in checkpoint.directions.items():
             dx, dy = direction_offsets[direction]
-            indicator_x = cx + dx
-            indicator_y = cy + dy
+            indicator_x = int(cx + dx)
+            indicator_y = int(cy + dy)
             
             # Color según estado
             if state == DirectionState.UNEXPLORED:
@@ -112,60 +135,76 @@ class GraphRenderer:
             else:  # BLOCKED
                 color = Config.COLOR_BLOCKED
             
-            # Dibujar indicador
-            pygame.draw.circle(
-                self.screen,
-                color,
-                (int(indicator_x), int(indicator_y)),
-                indicator_size
-            )
+            # Dibujar indicador con anti-aliasing
+            pygame.gfxdraw.filled_circle(self.screen, indicator_x, indicator_y, indicator_size, color)
+            pygame.gfxdraw.aacircle(self.screen, indicator_x, indicator_y, indicator_size, color)
+            
+            # Borde oscuro para contraste
+            border_color = tuple(max(0, c - 80) for c in color[:3])
+            pygame.gfxdraw.aacircle(self.screen, indicator_x, indicator_y, indicator_size, border_color)
             
             # Letra de dirección (si zoom es suficiente)
-            if self.camera.zoom > 0.8:
+            if self.camera.zoom > 0.7:
                 letter = direction.value
                 text = self.font_small.render(letter, True, (0, 0, 0))
-                text_rect = text.get_rect(center=(int(indicator_x), int(indicator_y)))
+                text_rect = text.get_rect(center=(indicator_x, indicator_y))
                 self.screen.blit(text, text_rect)
     
     def _draw_ui(self):
-        """Dibuja overlay con información"""
-        y_offset = 15
+        """Dibuja overlay con información mejorado"""
+        # Panel semitransparente de fondo para info
+        panel_height = 160
+        panel = pygame.Surface((280, panel_height), pygame.SRCALPHA)
+        panel.fill((15, 15, 25, 200))
+        self.screen.blit(panel, (10, 10))
+        
+        y_offset = 20
         
         # Estadísticas del grafo
         stats = self.graph.get_stats()
         current_cp = self.graph.get_current_checkpoint()
         
+        # Título
+        title = self.font.render("MazeRunner", True, (100, 200, 255))
+        self.screen.blit(title, (20, y_offset))
+        y_offset += 30
+        
         info_lines = [
-            f"Checkpoint Actual: #{current_cp.id}",
-            f"Total Checkpoints: {stats['total_checkpoints']}",
+            f"Checkpoint: #{current_cp.id}",
+            f"Total: {stats['total_checkpoints']}",
             f"Dead-ends: {stats['dead_ends']}",
-            f"Direcciones sin explorar: {stats['unexplored_directions']}",
-            f"Zoom: {self.camera.zoom:.2f}x",
+            f"Sin explorar: {stats['unexplored_directions']}",
+            f"Zoom: {self.camera.zoom:.1f}x",
         ]
         
-        if stats['exploration_complete']:
-            info_lines.append("✅ EXPLORACIÓN COMPLETA")
-        
-        # Renderizar
+        # Renderizar con sombra
         for line in info_lines:
+            # Sombra
+            shadow = self.font_small.render(line, True, (0, 0, 0))
+            self.screen.blit(shadow, (21, y_offset + 1))
+            # Texto
             text = self.font_small.render(line, True, Config.COLOR_TEXT)
-            self.screen.blit(text, (15, y_offset))
+            self.screen.blit(text, (20, y_offset))
             y_offset += 22
         
-        # Instrucciones en la parte inferior
-        instructions = [
-            "━━━ CONTROLES ━━━",
-            "Drag: Pan | Scroll: Zoom | Space: Centrar en checkpoint actual",
-            "",
-            "━━━ COMANDOS ━━━",
-            "N/S/E/W: Crear checkpoint en dirección (ej: 'N BLOCKED UNEXPLORED UNEXPLORED')",
-            "U: Marcar dirección como UNEXPLORED | B: Marcar como BLOCKED",
-            "D: Marcar checkpoint actual como dead-end",
-            "R: Reset completo | ESC: Salir"
+        # Indicador de completitud
+        if stats['exploration_complete']:
+            complete_text = self.font_small.render("✓ COMPLETO", True, Config.COLOR_EXPLORED)
+            self.screen.blit(complete_text, (20, y_offset))
+        
+        # Panel de ayuda en la parte inferior
+        help_panel = pygame.Surface((350, 80), pygame.SRCALPHA)
+        help_panel.fill((15, 15, 25, 180))
+        self.screen.blit(help_panel, (10, Config.WINDOW_HEIGHT - 90))
+        
+        help_lines = [
+            "Comandos: N/S/E/W <front> <left> <right>",
+            "Ejemplo: N BLOCKED UNEXPLORED UNEXPLORED",
+            "move <id> | stats | deadend | reset | quit"
         ]
         
-        y_offset = Config.WINDOW_HEIGHT - (len(instructions) * 20) - 10
-        for line in instructions:
+        y_offset = Config.WINDOW_HEIGHT - 80
+        for line in help_lines:
             text = self.font_small.render(line, True, Config.COLOR_TEXT_DIM)
-            self.screen.blit(text, (15, y_offset))
-            y_offset += 20
+            self.screen.blit(text, (20, y_offset))
+            y_offset += 22

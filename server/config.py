@@ -1,6 +1,5 @@
 """
 Configuration file for MazeRunner - Graph-based visualization
-Simplified settings for checkpoint-based maze representation
 """
 
 class Config:
@@ -9,27 +8,27 @@ class Config:
     WINDOW_HEIGHT = 900
     FPS = 60
     
-    # ============ Visualización de grafo ============
-    CHECKPOINT_SPACING = 100    # pixels - distancia entre checkpoints conectados
-    CHECKPOINT_RADIUS = 20      # pixels - radio del círculo del checkpoint
+    # ============ Grafo ============
+    CHECKPOINT_SPACING = 100    # pixels - distancia entre checkpoints
+    CHECKPOINT_RADIUS = 22      # pixels - radio del checkpoint
     
-    # Colores (RGB)
-    COLOR_BG = (25, 25, 35)                    # Fondo oscuro
-    COLOR_CHECKPOINT_NORMAL = (100, 150, 200)  # Checkpoint normal (azul)
-    COLOR_CHECKPOINT_CURRENT = (255, 200, 50)  # Checkpoint actual (amarillo)
-    COLOR_CHECKPOINT_DEAD_END = (200, 80, 80)  # Dead-end (rojo)
-    COLOR_CONNECTION = (150, 150, 180)         # Conexión explorada (gris azulado)
+    # ============ Colores ============
+    COLOR_BG = (20, 22, 30)                     # Fondo oscuro profesional
+    COLOR_CHECKPOINT_NORMAL = (80, 140, 200)    # Checkpoint normal (azul suave)
+    COLOR_CHECKPOINT_CURRENT = (80, 220, 120)   # Checkpoint actual (verde esmeralda)
+    COLOR_CHECKPOINT_DEAD_END = (220, 70, 70)   # Dead-end (rojo)
+    COLOR_CONNECTION = (120, 140, 160)          # Conexión explorada (gris azulado)
     
-    # Estados de dirección (para indicadores visuales)
-    COLOR_UNEXPLORED = (255, 255, 100)  # Amarillo - no explorado
-    COLOR_EXPLORED = (100, 255, 100)    # Verde - explorado
-    COLOR_BLOCKED = (255, 100, 100)     # Rojo - bloqueado
+    # Estados de dirección
+    COLOR_UNEXPLORED = (255, 230, 80)   # Amarillo brillante
+    COLOR_EXPLORED = (80, 220, 120)     # Verde esmeralda
+    COLOR_BLOCKED = (240, 80, 80)       # Rojo coral
     
-    # Texto
-    COLOR_TEXT = (220, 220, 220)
-    COLOR_TEXT_DIM = (150, 150, 150)
-    FONT_SIZE = 18
-    FONT_SIZE_SMALL = 14
+    # UI
+    COLOR_TEXT = (235, 235, 240)
+    COLOR_TEXT_DIM = (140, 145, 155)
+    FONT_SIZE = 20
+    FONT_SIZE_SMALL = 15
     
     # ============ Cámara ============
     INITIAL_ZOOM = 1.0
@@ -38,6 +37,5 @@ class Config:
     MAX_ZOOM = 3.0
     
     # ============ Debug ============
-    DEBUG_MODE = True           # Mostrar info de debug
-    SHOW_GRID = False           # Mostrar grid de fondo (opcional)
-    SHOW_IDS = True             # Mostrar IDs de checkpoints
+    DEBUG_MODE = True
+    SHOW_IDS = True

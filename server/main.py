@@ -40,10 +40,11 @@ class MazeVisualizer:
         print("\n📍 Sistema iniciado con Checkpoint #0")
         print(f"🧭 Heading inicial: {self.current_heading.value}")
         print("\n💡 COMANDOS DISPONIBLES:")
-        print("   - Para crear checkpoint: <dirección> <front> <left> <right>")
+        print("   - Crear checkpoint: <HEADING> <front> <left> <right>")
+        print("     HEADING = Dirección actual del bot (N/S/E/W)")
+        print("     front/left/right = Estado de cada sensor")
+        print("     Estados: UNEXPLORED (U), BLOCKED (B), EXPLORED (E)")
         print("     Ejemplo: N BLOCKED UNEXPLORED UNEXPLORED")
-        print("   - Direcciones: N, S, E, W")
-        print("   - Estados: UNEXPLORED, EXPLORED, BLOCKED")
         print("   - 'update <checkpoint_id> <direccion> <estado>' - Actualizar dirección")
         print("   - 'move <checkpoint_id>' - Mover a checkpoint")
         print("   - 'deadend' - Marcar checkpoint actual como dead-end")
@@ -137,6 +138,11 @@ class MazeVisualizer:
             try:
                 checkpoint_id = int(parts[1])
                 direction = Cardinal.from_string(parts[2])
+                
+                if direction is None:
+                    print(f"❌ Dirección inválida: {parts[2]}\n")
+                    return
+                
                 state_str = parts[3]
                 
                 state_map = {
@@ -156,11 +162,17 @@ class MazeVisualizer:
                 print(f"❌ Comando inválido: {e}\n")
             return
         
-        # Crear nuevo checkpoint: <DIRECCION> <FRONT> <LEFT> <RIGHT>
+        # Crear nuevo checkpoint: <HEADING> <FRONT> <LEFT> <RIGHT>
+        # HEADING = Dirección ACTUAL del bot (hacia dónde está mirando)
         # Ejemplo: N BLOCKED UNEXPLORED UNEXPLORED
         if cmd in ['N', 'S', 'E', 'W'] and len(parts) >= 4:
             try:
-                direction = Cardinal.from_string(cmd)
+                # IMPORTANTE: El bot reporta su HEADING ACTUAL, no la dirección de llegada
+                current_heading = Cardinal.from_string(cmd)
+                if current_heading is None:
+                    print(f"❌ Heading inválido: {cmd}\n")
+                    return
+                
                 front_str = parts[1]
                 left_str = parts[2]
                 right_str = parts[3]
@@ -179,30 +191,41 @@ class MazeVisualizer:
                 left_state = state_map.get(left_str, DirectionState.UNEXPLORED)
                 right_state = state_map.get(right_str, DirectionState.UNEXPLORED)
                 
+                # Calcular dirección de llegada basándose en el heading anterior y el actual
+                # Si el bot gira, la dirección de llegada es opuesta al nuevo heading
+                # Si el bot avanza recto, la dirección de llegada es opuesta al heading actual
+                current_cp = self.graph.get_current_checkpoint()
+                
+                # Determinar dirección desde parent hacia este nuevo checkpoint
+                # El bot avanzó en la dirección de su heading ANTERIOR
+                arrival_direction = self.current_heading
+                
                 # Crear checkpoint
-                current = self.graph.get_current_checkpoint()
                 new_checkpoint = self.graph.create_checkpoint(
-                    parent_id=current.id,
-                    arrival_direction=direction,
+                    parent_id=current_cp.id,
+                    arrival_direction=arrival_direction,
                     front_state=front_state,
                     left_state=left_state,
                     right_state=right_state,
-                    current_heading=direction
+                    current_heading=current_heading
                 )
                 
                 # Mover a nuevo checkpoint
                 self.graph.set_current_checkpoint(new_checkpoint.id)
-                self.current_heading = direction
+                
+                # Actualizar heading actual
+                self.current_heading = current_heading
                 
                 # Centrar cámara
                 self.camera.center_on(new_checkpoint.render_x, new_checkpoint.render_y)
                 
-                print(f"🧭 Heading actualizado: {direction.value}")
+                print(f"🧭 Bot mirando: {current_heading.value}")
                 print(f"🤖 Ahora en Checkpoint #{new_checkpoint.id}\n")
                 
             except Exception as e:
                 print(f"❌ Error al crear checkpoint: {e}")
-                print("Formato: <DIRECCION> <FRONT> <LEFT> <RIGHT>")
+                print("Formato: <HEADING> <FRONT> <LEFT> <RIGHT>")
+                print("HEADING = Dirección actual del bot (N/S/E/W)")
                 print("Ejemplo: N BLOCKED UNEXPLORED UNEXPLORED\n")
             return
         

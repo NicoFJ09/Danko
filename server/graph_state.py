@@ -33,7 +33,7 @@ class Cardinal(Enum):
         return opposites[direction]
     
     @staticmethod
-    def from_string(s: str) -> 'Cardinal':
+    def from_string(s: str) -> Optional['Cardinal']:
         """Convierte string a Cardinal"""
         mapping = {'N': Cardinal.NORTH, 'S': Cardinal.SOUTH, 
                    'E': Cardinal.EAST, 'W': Cardinal.WEST}
@@ -238,7 +238,9 @@ class MazeGraph:
         checkpoint = current
         while checkpoint.parent_id is not None:
             parent = self.get_checkpoint(checkpoint.parent_id)
-            if parent and parent.has_unexplored():
+            if parent is None:
+                break
+            if parent.has_unexplored():
                 return parent
             checkpoint = parent
         

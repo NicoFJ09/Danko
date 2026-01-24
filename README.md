@@ -6,152 +6,150 @@ Sistema de exploración autónoma de laberintos basado en grafos.
 
 ### Sistema Basado en Checkpoints y Grafos
 
-El sistema ahora utiliza un **grafo de checkpoints** en lugar de un grid continuo basado en distancias. Esto simplifica enormemente la lógica y se alinea con el algoritmo DFS (Depth-First Search) con backtracking.
+El sistema utiliza un **grafo de checkpoints** donde cada nodo representa un **punto de detección de cambio** en el laberinto.
 
 #### Conceptos Clave
 
 **Checkpoint (Nodo)**:
-- Representa un punto de decisión en el laberinto (intersección, esquina, dead-end)
+- Se crea cuando el bot detecta un **cambio significativo** en sensores laterales (±15cm)
+- Representa una esquina, apertura o intersección detectada
+- **NO implica que el bot gire ahí** - solo marca dónde detectó el cambio
+- El bot puede seguir recto después de detectar el checkpoint
 - Cada checkpoint tiene 4 direcciones cardinales: **N, S, E, W**
 - Cada dirección puede estar en uno de 3 estados:
-  - `UNEXPLORED` - No explorada aún (amarillo)
-  - `EXPLORED` - Ya explorada con conexión a otro checkpoint (verde)
-  - `BLOCKED` - Pared detectada (rojo)
+  - `UNEXPLORED` 🟡 - No explorada aún
+  - `EXPLORED` 🟢 - Ya explorada con conexión
+  - `BLOCKED` 🔴 - Pared detectada
 
 **Conexiones**:
 - Los checkpoints se conectan entre sí cuando el bot se mueve
 - Las conexiones son bidireccionales
 - Forman el grafo del laberinto explorado
 
-### 📦 Componentes del Server
+### 📦 Componentes
 
 ```
 server/
-├── config.py              # Configuración (colores, ventana, zoom)
+├── config.py              # Configuración visual
 ├── graph_state.py         # Sistema de grafo (checkpoints + conexiones)
 ├── simple_camera.py       # Cámara con pan/zoom
-├── graph_renderer.py      # Renderizado visual del grafo
+├── graph_renderer.py      # Renderizado anti-aliased
 ├── main.py                # Loop principal + input manual
+├── requirements.txt       # Dependencias (pygame)
 └── old_system/            # Sistema anterior (archivado)
-    ├── map/
-    └── network/
 ```
 
-## 🎮 Uso del Visualizador
+## 🎮 Uso
 
-### Iniciar el servidor:
+### Instalar e iniciar:
 ```bash
 cd server
-python main.py
+pip3 install -r requirements.txt
+python3 main.py
 ```
 
-### Comandos Disponibles
+### Comandos por Consola
 
-**Crear nuevo checkpoint** (desde checkpoint actual):
+**Crear checkpoint** (desde el actual):
 ```
-<DIRECCION> <FRONT> <LEFT> <RIGHT>
+<HEADING> <FRONT> <LEFT> <RIGHT>
 
 Ejemplo:
 N BLOCKED UNEXPLORED UNEXPLORED
 ```
-- `DIRECCION`: N, S, E, W (dirección hacia la que avanzó el bot)
-- `FRONT/LEFT/RIGHT`: Estados de los sensores
-  - `UNEXPLORED` (U): Camino sin explorar
-  - `BLOCKED` (B): Pared detectada
-  - `EXPLORED` (E): Ya explorado
+- `HEADING`: Dirección actual del bot (N/S/E/W) - **CRÍTICO**
+- `FRONT/LEFT/RIGHT`: Estados de sensores
+- Estados: `UNEXPLORED` (U), `BLOCKED` (B), `EXPLORED` (E)
 
-**Otros comandos**:
-- `move <id>` - Mover a checkpoint específico
-- `update <id> <dir> <estado>` - Actualizar dirección de checkpoint
-- `deadend` - Marcar checkpoint actual como dead-end
-- `stats` - Ver estadísticas del grafo
-- `reset` - Resetear grafo completo
+**¿Por qué HEADING es importante?**
+El bot envía su **orientación absoluta** (basada en giroscopio) para que el servidor convierta las lecturas relativas (frente/izquierda/derecha) a direcciones absolutas (N/S/E/W).
+
+**Otros**:
+- `move <id>` - Saltar a checkpoint
+- `update <id> <dir> <estado>` - Actualizar dirección
+- `deadend` - Marcar como dead-end
+- `stats` - Ver estadísticas
+- `reset` - Reiniciar
 - `quit` - Salir
 
 ### Controles de Cámara
 
-- **Click + Drag**: Pan (mover vista)
-- **Scroll**: Zoom in/out
+- **Drag**: Pan
+- **Scroll**: Zoom
 - **Espacio**: Centrar en checkpoint actual
 - **ESC**: Salir
 
 ## 🎨 Visualización
 
-### Colores de Checkpoints
-- 🟡 **Amarillo**: Checkpoint actual (donde está el bot)
-- 🔵 **Azul**: Checkpoint normal
-- 🔴 **Rojo**: Dead-end
+- **Círculos grandes**: Checkpoints
+  - 🔵 Azul = Normal
+  - 🟢 Verde = Actual (donde está el bot)
+  - 🔴 Rojo = Dead-end
+- **Círculos pequeños**: Estados de direcciones (N/S/E/W)
+  - 🟡 UNEXPLORED
+  - 🟢 EXPLORED
+  - 🔴 BLOCKED
+- **Líneas grises**: Conexiones entre checkpoints
 
-### Indicadores de Direcciones
-Alrededor de cada checkpoint hay 4 círculos pequeños (N, S, E, W):
-- 🟡 **Amarillo**: UNEXPLORED
-- 🟢 **Verde**: EXPLORED
-- 🔴 **Rojo**: BLOCKED
+## 🧠 Algoritmo (Bot)
 
-### Conexiones
-- Líneas grises conectan checkpoints explorados
+**Detección de Checkpoint**:
+- Mientras avanza, monitorea sensores laterales continuamente
+- Cuando detecta cambio ±15cm → CHECKPOINT detectado
+- Marca la posición y lee todos los sensores
+- El bot NO necesariamente gira ahí - puede seguir recto
 
-## 🧠 Algoritmo de Exploración (Bot)
+**Flujo de exploración**:
+1. **En checkpoint**: Leer sensores → determinar estados de 4 direcciones
+2. **Elegir dirección**: Prioridad recto si UNEXPLORED, sino N-E-W-S
+3. **Avanzar**: Monitorear laterales hasta nuevo cambio ±15cm
+   - Mientras avanza, las **reglas del checkpoint actual se mantienen**
+   - Los sensores pueden leer lo que sea, pero las decisiones ya están tomadas
+   - Ejemplo: Si S=EXPLORED en el checkpoint, el bot NO considerará ir al sur aunque los sensores lean 180cm en esa dirección
+4. **Crear checkpoint**: Solo cuando detecta cambio ±15cm → nuevo nodo + nueva evaluación de estados
+5. **Backtracking**: Si no hay UNEXPLORED, volver a parent
 
-El bot sigue un algoritmo **DFS con backtracking**:
+### Umbrales
+```
+FRENTE_BLOCKED = 5cm
+LATERAL_BLOCKED = 20cm
+CAMBIO_SIGNIFICATIVO = 15cm
+```
 
-1. **En cada checkpoint**: Leer sensores → determinar estados de direcciones
-2. **Elegir dirección**:
-   - Prioridad: seguir recto si está UNEXPLORED
-   - Si no: primera dirección UNEXPLORED en orden N-E-W-S
-   - Si no hay UNEXPLORED: **backtracking** a checkpoint anterior con UNEXPLORED
-3. **Avanzar**: Hasta detectar cambio significativo en sensores laterales (±15cm)
-4. **Crear checkpoint**: Marcar nuevo nodo con estados de sensores
-5. **Repetir** hasta que no queden direcciones UNEXPLORED
+## 📚 Documentación
 
-### Umbrales de Detección (Bot)
-```python
-FRENTE_BLOCKED = 5cm        # Pared muy cerca al frente
-LATERAL_BLOCKED = 20cm      # Considera pared en lateral
-CAMBIO_SIGNIFICATIVO = 15cm # Cambio que indica nuevo checkpoint
+- [EJEMPLO_LABERINTO.md](server/EJEMPLO_LABERINTO.md) - Recorrido completo paso a paso con laberinto de 4 habitaciones
+- [DETECCION_CICLOS_MOVIMIENTO.md](server/DETECCION_CICLOS_MOVIMIENTO.md) - Prevenir loops infinitos (lógica del bot, no afecta checkpoints)
+
+## 📝 Ejemplo
+
+```bash
+> N UNEXPLORED BLOCKED BLOCKED
+✅ Checkpoint #1 creado
+🤖 Ahora en Checkpoint #1
+
+> E BLOCKED UNEXPLORED UNEXPLORED
+✅ Checkpoint #2 creado
+
+> stats
+📊 Total: 3 | Dead-ends: 0 | Sin explorar: 7
 ```
 
 ## 🔮 Próximos Pasos
 
-### Bot (CircuitPython):
-- [ ] Implementar sensores laterales (hardware)
-- [ ] Implementar algoritmo DFS completo
-- [ ] Sistema de checkpoints en memoria
-- [ ] Backtracking automático
-- [ ] Enviar datos de checkpoints al server vía HTTP
+**Bot**:
+- [ ] Implementar detección de checkpoints
+- [ ] Sistema de memoria de checkpoints
+- [ ] **Detección de ciclos de movimiento** (pattern matching)
+- [ ] Algoritmo DFS + backtracking
+- [ ] Envío HTTP al server
 
-### Server:
-- [ ] Modo de recepción HTTP (además de manual)
-- [ ] Visualización en tiempo real
-- [ ] Exportar grafo a JSON
-- [ ] Algoritmo de path-finding sobre grafo explorado
-
-## 📝 Ejemplo de Sesión
-
-```bash
-> N BLOCKED UNEXPLORED UNEXPLORED
-✅ Checkpoint #1 creado (parent: #0)
-🧭 Heading actualizado: N
-🤖 Ahora en Checkpoint #1
-
-> E UNEXPLORED BLOCKED UNEXPLORED
-✅ Checkpoint #2 creado (parent: #1)
-🧭 Heading actualizado: E
-🤖 Ahora en Checkpoint #2
-
-> stats
-📊 ESTADÍSTICAS:
-   Total checkpoints: 3
-   Dead-ends: 0
-   Direcciones sin explorar: 8
-   Exploración completa: ❌ NO
-```
-
-## 🛠️ Tecnologías
-
-**Bot**: CircuitPython, IdeaBoard, LSM6DS3TRC (gyro), HCSR04 (ultrasónico)  
-**Server**: Python, PyGame, Grafos
+**Server**:
+- [ ] Modo recepción HTTP
+- [ ] Actualización en tiempo real
 
 ---
 
-**Estado actual**: ✅ Sistema de grafos funcionando | 🔄 Algoritmo del bot en desarrollo
+**Estado**: ✅ Visualizador funcionando | 🔄 Bot en desarrollo
+
+**Tech**: CircuitPython (bot) | Python + PyGame (server)
