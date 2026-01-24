@@ -40,17 +40,20 @@ class MazeVisualizer:
         print("\n📍 Sistema iniciado con Checkpoint #0")
         print(f"🧭 Heading inicial: {self.current_heading.value}")
         print("\n💡 COMANDOS DISPONIBLES:")
-        print("   - Crear checkpoint: <HEADING> <front> <left> <right>")
-        print("     HEADING = Dirección actual del bot (N/S/E/W)")
-        print("     front/left/right = Estado de cada sensor")
-        print("     Estados: UNEXPLORED/UN/U, EXPLORED/EX/E, BLOCKED/BL/B")
-        print("     Ejemplo: N BL UN UN  (norte bloqueado, izq/der sin explorar)")
-        print("   - 'update <checkpoint_id> <direccion> <estado>' - Actualizar dirección")
-        print("   - 'move <checkpoint_id>' - Mover a checkpoint")
-        print("   - 'deadend' - Marcar checkpoint actual como dead-end")
-        print("   - 'stats' - Ver estadísticas")
-        print("   - 'reset' - Resetear grafo")
-        print("   - 'quit' - Salir")
+        print("   🖱️  MOUSE:")
+        print("      - Clic en nodo = mover a ese checkpoint")
+        print("      - Clic en círculo N/S/E/W = toggle estado (UN→EX→BL)")
+        print("      - Clic en flecha = crear nuevo nodo en esa dirección")
+        print("      - Drag = pan | Wheel = zoom")
+        print("\n   ⌨️  TECLADO:")
+        print("      - R = RESET | D = DELETE | P = PRINT (genera código ruta)")
+        print("      - ESC = salir | ESPACIO = centrar")
+        print("\n   ⌨️  COMANDOS:")
+        print("      - Crear checkpoint: N/S/E/W <front> <left> <right>")
+        print("        Estados: UN/EX/BL (unexplored/explored/blocked)")
+        print("        Ejemplo: N BL UN UN")
+        print("      - UPDATE <id> <dir> <estado>  |  MOVE <id>")
+        print("      - DELETE [id] | PRINT | stats | deadend <id> | reset | quit")
         print("\n⌨️  Esperando comandos...\n")
     
     def handle_events(self):
@@ -60,7 +63,57 @@ class MazeVisualizer:
                 self.running = False
             
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                self.camera.handle_mouse_down(event.pos, event.button)
+                # Clic izquierdo para interacciones
+                if event.button == 1:
+                    click_type, click_data = self.renderer.interaction.handle_click(event.pos)
+                    
+                    if click_type == 'checkpoint':
+                        # Mover a checkpoint
+                        checkpoint_id = click_data
+                        if checkpoint_id in self.graph.checkpoints:
+                            self.graph.set_current_checkpoint(checkpoint_id)
+                            current = self.graph.get_current_checkpoint()
+                            self.camera.center_on(current.render_x, current.render_y)
+                            print(f"🤖 Movido a Checkpoint #{checkpoint_id}\n")
+                    
+                    elif click_type == 'direction':
+                        # Toggle estado de dirección
+                        if click_data and isinstance(click_data, tuple) and len(click_data) == 2:
+                            cp_id: int = click_data[0]
+                            direction: Cardinal = click_data[1]
+                            checkpoint = self.graph.checkpoints.get(cp_id)
+                            if checkpoint:
+                                # Ciclar estados: UNEXPLORED → EXPLORED → BLOCKED → UNEXPLORED
+                                current_state = checkpoint.directions[direction]
+                                if current_state == DirectionState.UNEXPLORED:
+                                    new_state = DirectionState.EXPLORED
+                                elif current_state == DirectionState.EXPLORED:
+                                    new_state = DirectionState.BLOCKED
+                                else:  # BLOCKED
+                                    new_state = DirectionState.UNEXPLORED
+                                
+                                self.graph.update_checkpoint_direction(cp_id, direction, new_state)
+                                
+                                state_names = {
+                                    DirectionState.UNEXPLORED: 'UNEXPLORED',
+                                    DirectionState.EXPLORED: 'EXPLORED',
+                                    DirectionState.BLOCKED: 'BLOCKED'
+                                }
+                                print(f"✅ CP#{cp_id}: {direction.value} → {state_names[new_state]}\n")
+                    
+                    elif click_type == 'arrow':
+                        # Crear nuevo checkpoint en esa dirección
+                        if click_data:
+                            checkpoint_id, direction = click_data
+                            self._create_node_in_direction(checkpoint_id, direction)
+                    
+                    else:
+                        # No hay elemento interactivo, permitir pan
+                        self.camera.handle_mouse_down(event.pos, event.button)
+                
+                # Pan con otros botones del mouse
+                else:
+                    self.camera.handle_mouse_down(event.pos, event.button)
             
             elif event.type == pygame.MOUSEBUTTONUP:
                 self.camera.handle_mouse_up(event.pos, event.button)
@@ -74,11 +127,68 @@ class MazeVisualizer:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
+                elif event.key == pygame.K_r:
+                    # Reset con tecla R
+                    self.graph.reset()
+                    self.current_heading = Cardinal.NORTH
+                    self.camera.center_on(0, 0)
+                    print("🔄 Grafo reseteado (tecla R)\n")
+                elif event.key == pygame.K_d:
+                    # Delete checkpoint actual con tecla D
+                    current = self.graph.get_current_checkpoint()
+                    if self.graph.delete_checkpoint(current.id):
+                        # Centrar en nuevo checkpoint actual
+                        new_current = self.graph.get_current_checkpoint()
+                        self.camera.center_on(new_current.render_x, new_current.render_y)
+                        print(f"📍 Ahora en Checkpoint #{new_current.id}\n")
+                elif event.key == pygame.K_p:
+                    # Print route code con tecla P
+                    route_code = self.graph.generate_route_code()
+                    print("\n" + "="*70)
+                    print(route_code)
+                    print("="*70 + "\n")
                 elif event.key == pygame.K_SPACE:
                     # Centrar en checkpoint actual
                     current = self.graph.get_current_checkpoint()
                     self.camera.center_on(current.render_x, current.render_y)
                     print(f"📍 Centrado en Checkpoint #{current.id}")
+    
+    def _create_node_in_direction(self, parent_checkpoint_id, direction):
+        """Crea un nuevo checkpoint en la dirección especificada y mueve el bot ahí"""
+        # Verificar que no haya ya una conexión en esa dirección
+        parent = self.graph.checkpoints.get(parent_checkpoint_id)
+        if parent and direction in parent.connections:
+            print(f"❌ Ya existe un checkpoint en {direction.value} del checkpoint #{parent_checkpoint_id}\n")
+            return
+        
+        # Por defecto, crear con front=UNEXPLORED, laterales=BLOCKED
+        front_state = DirectionState.UNEXPLORED
+        left_state = DirectionState.BLOCKED
+        right_state = DirectionState.BLOCKED
+        
+        # Crear el checkpoint
+        # - parent_id: checkpoint desde el que sale
+        # - arrival_direction: dirección en la que se mueve (vista desde parent)
+        # - current_heading: la misma dirección (el bot se mueve en esa dirección)
+        new_id = self.graph.create_checkpoint(
+            parent_checkpoint_id,  # parent_id
+            direction,             # arrival_direction (desde parent)
+            front_state,
+            left_state,
+            right_state,
+            direction              # current_heading (bot mirando en esa dirección)
+        )
+        
+        opposite = Cardinal.opposite(direction)
+        print(f"✅ Checkpoint #{new_id} creado ({direction.value})")
+        print(f"🔗 Conectado a Checkpoint #{parent_checkpoint_id} desde {opposite.value}")
+        print(f"🤖 Ahora en Checkpoint #{new_id}\n")
+        
+        # Centrar cámara en el nuevo checkpoint
+        current = self.graph.get_current_checkpoint()
+        self.camera.center_on(current.render_x, current.render_y)
+        current = self.graph.get_current_checkpoint()
+        self.camera.center_on(current.render_x, current.render_y)
     
     def process_command(self, command: str):
         """Procesa comando de entrada del usuario"""
@@ -102,6 +212,14 @@ class MazeVisualizer:
             print("🔄 Grafo reseteado\n")
             return
         
+        # Print route code
+        if cmd in ['PRINT', 'P']:
+            route_code = self.graph.generate_route_code()
+            print("\n" + "="*70)
+            print(route_code)
+            print("="*70 + "\n")
+            return
+        
         # Stats
         if cmd in ['STATS', 'S']:
             stats = self.graph.get_stats()
@@ -112,10 +230,32 @@ class MazeVisualizer:
             print(f"   Exploración completa: {'✅ SÍ' if stats['exploration_complete'] else '❌ NO'}\n")
             return
         
-        # Dead-end
-        if cmd in ['DEADEND', 'D']:
-            current = self.graph.get_current_checkpoint()
-            self.graph.mark_as_dead_end(current.id)
+        # Dead-end (requiere ID)
+        if cmd == 'DEADEND' and len(parts) >= 2:
+            try:
+                checkpoint_id = int(parts[1])
+                self.graph.mark_as_dead_end(checkpoint_id)
+            except ValueError:
+                print("❌ ID inválido\n")
+            return
+        
+        # Delete checkpoint (usa actual si no se especifica ID)
+        if cmd in ['DELETE', 'DEL']:
+            if len(parts) >= 2:
+                try:
+                    checkpoint_id = int(parts[1])
+                    if self.graph.delete_checkpoint(checkpoint_id):
+                        current = self.graph.get_current_checkpoint()
+                        self.camera.center_on(current.render_x, current.render_y)
+                except ValueError:
+                    print("❌ ID inválido\n")
+            else:
+                # Borrar checkpoint actual
+                current = self.graph.get_current_checkpoint()
+                if self.graph.delete_checkpoint(current.id):
+                    new_current = self.graph.get_current_checkpoint()
+                    self.camera.center_on(new_current.render_x, new_current.render_y)
+                    print(f"📍 Ahora en Checkpoint #{new_current.id}\n")
             return
         
         # Move to checkpoint
@@ -223,6 +363,12 @@ class MazeVisualizer:
                 # Determinar dirección desde parent hacia este nuevo checkpoint
                 # El bot avanzó en la dirección de su heading ANTERIOR
                 arrival_direction = self.current_heading
+                
+                # Verificar que no haya ya una conexión en esa dirección
+                if arrival_direction in current_cp.connections:
+                    print(f"❌ Ya existe un checkpoint en {arrival_direction.value} del checkpoint #{current_cp.id}")
+                    print(f"   No se puede crear otro checkpoint en la misma dirección\n")
+                    return
                 
                 # Crear checkpoint
                 new_checkpoint = self.graph.create_checkpoint(

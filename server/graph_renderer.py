@@ -8,6 +8,7 @@ import pygame.gfxdraw
 import math
 from config import Config
 from graph_state import MazeGraph, DirectionState, Cardinal
+from graph_interaction import GraphInteraction
 
 
 class GraphRenderer:
@@ -17,6 +18,9 @@ class GraphRenderer:
         self.screen = screen
         self.camera = camera
         self.graph = graph
+        
+        # Sistema de interacción
+        self.interaction = GraphInteraction(graph, camera, Config.CHECKPOINT_RADIUS)
         
         # Fuentes
         pygame.font.init()
@@ -30,6 +34,9 @@ class GraphRenderer:
         
         # Dibuja conexiones primero (debajo de los nodos)
         self._draw_connections()
+        
+        # Dibuja flechas para crear nodos
+        self._draw_arrows()
         
         # Dibuja checkpoints
         self._draw_checkpoints()
@@ -193,18 +200,67 @@ class GraphRenderer:
             self.screen.blit(complete_text, (20, y_offset))
         
         # Panel de ayuda en la parte inferior
-        help_panel = pygame.Surface((350, 80), pygame.SRCALPHA)
+        help_panel = pygame.Surface((520, 100), pygame.SRCALPHA)
         help_panel.fill((15, 15, 25, 180))
-        self.screen.blit(help_panel, (10, Config.WINDOW_HEIGHT - 90))
+        self.screen.blit(help_panel, (10, Config.WINDOW_HEIGHT - 110))
         
-        help_lines = [
-            "Comandos: N/S/E/W <front> <left> <right>",
-            "Ejemplo: N BLOCKED UNEXPLORED UNEXPLORED",
-            "move <id> | stats | deadend | reset | quit"
+        help_lines_ui = [
+            "🖱️ Clic en nodo = MOVE | Clic en indicador = toggle estado",
+            "🖱️ Clic en flecha = crear nodo | Drag = pan | Wheel = zoom",
+            "⌨️  R = RESET | D = DELETE | P = PRINT (genera código ruta)",
+            "⌨️  N/S/E/W UN/BL/EX | stats | deadend | quit"
         ]
         
-        y_offset = Config.WINDOW_HEIGHT - 80
-        for line in help_lines:
-            text = self.font_small.render(line, True, Config.COLOR_TEXT_DIM)
-            self.screen.blit(text, (20, y_offset))
-            y_offset += 22
+        y_help = Config.WINDOW_HEIGHT - 105
+        for line in help_lines_ui:
+            text = self.font_small.render(line, True, Config.COLOR_TEXT)
+            self.screen.blit(text, (20, y_help))
+            y_help += 20
+    
+    def _draw_arrows(self):
+        """Dibuja flechas clickeables para crear nodos en direcciones libres"""
+        for checkpoint in self.graph.get_all_checkpoints():
+            arrows = self.interaction.get_arrows_for_checkpoint(checkpoint)
+            
+            for direction, (world_x, world_y) in arrows.items():
+                screen_x, screen_y = self.camera.world_to_screen(world_x, world_y)
+                
+                # Tamaño de la flecha según zoom
+                arrow_size = max(8, int(12 * self.camera.zoom))
+                
+                # Color de la flecha (semi-transparente)
+                arrow_color = (100, 200, 100, 180)  # Verde claro
+                
+                # Dibujar flecha según dirección
+                if direction == Cardinal.NORTH:
+                    # Triángulo apuntando arriba
+                    points = [
+                        (screen_x, screen_y - arrow_size),
+                        (screen_x - arrow_size//2, screen_y + arrow_size//2),
+                        (screen_x + arrow_size//2, screen_y + arrow_size//2)
+                    ]
+                elif direction == Cardinal.SOUTH:
+                    # Triángulo apuntando abajo
+                    points = [
+                        (screen_x, screen_y + arrow_size),
+                        (screen_x - arrow_size//2, screen_y - arrow_size//2),
+                        (screen_x + arrow_size//2, screen_y - arrow_size//2)
+                    ]
+                elif direction == Cardinal.EAST:
+                    # Triángulo apuntando derecha
+                    points = [
+                        (screen_x + arrow_size, screen_y),
+                        (screen_x - arrow_size//2, screen_y - arrow_size//2),
+                        (screen_x - arrow_size//2, screen_y + arrow_size//2)
+                    ]
+                else:  # WEST
+                    # Triángulo apuntando izquierda
+                    points = [
+                        (screen_x - arrow_size, screen_y),
+                        (screen_x + arrow_size//2, screen_y - arrow_size//2),
+                        (screen_x + arrow_size//2, screen_y + arrow_size//2)
+                    ]
+                
+                # Dibujar el triángulo
+                pygame.draw.polygon(self.screen, arrow_color[:3], points)
+                pygame.draw.aalines(self.screen, (80, 160, 80), True, points)

@@ -272,6 +272,76 @@ class MazeGraph:
         
         return connections
     
+    def delete_checkpoint(self, checkpoint_id: int) -> bool:
+        """
+        Borra un checkpoint y todos sus DESCENDIENTES (hijos en el árbol).
+        No se puede borrar el checkpoint #0 (raíz).
+        Si se borra el checkpoint actual, se mueve al parent.
+        
+        Returns:
+            True si se borró exitosamente, False si no se pudo borrar
+        """
+        # No permitir borrar el checkpoint inicial
+        if checkpoint_id == 0:
+            print("❌ No se puede borrar el checkpoint #0 (raíz)")
+            return False
+        
+        # Verificar que existe
+        if checkpoint_id not in self.checkpoints:
+            print(f"❌ Checkpoint #{checkpoint_id} no existe")
+            return False
+        
+        # Recolectar todos los descendientes (búsqueda recursiva)
+        to_delete = self._collect_descendants(checkpoint_id)
+        to_delete.add(checkpoint_id)  # Incluir el nodo mismo
+        
+        # Si el checkpoint actual está en la lista de borrado, mover al parent
+        checkpoint = self.checkpoints[checkpoint_id]
+        if self.current_checkpoint_id in to_delete:
+            if checkpoint.parent_id is not None:
+                self.current_checkpoint_id = checkpoint.parent_id
+                print(f"📍 Checkpoint actual movido a #{checkpoint.parent_id} (parent)")
+            else:
+                self.current_checkpoint_id = 0
+                print(f"📍 Checkpoint actual movido a #0 (raíz)")
+        
+        # Desconectar del parent
+        if checkpoint.parent_id is not None:
+            parent = self.checkpoints.get(checkpoint.parent_id)
+            if parent:
+                # Encontrar y eliminar la conexión desde el parent
+                for direction, connected_id in list(parent.connections.items()):
+                    if connected_id == checkpoint_id:
+                        del parent.connections[direction]
+                        parent.set_direction(direction, DirectionState.UNEXPLORED)
+                        break
+        
+        # Borrar todos los checkpoints marcados
+        deleted_count = 0
+        for cp_id in sorted(to_delete):
+            if cp_id in self.checkpoints:
+                del self.checkpoints[cp_id]
+                deleted_count += 1
+        
+        print(f"🗑️  Borrados {deleted_count} checkpoint(s): {sorted(to_delete)}")
+        return True
+    
+    def _collect_descendants(self, checkpoint_id: int) -> Set[int]:
+        """
+        Recolecta recursivamente todos los descendientes de un checkpoint.
+        Un descendiente es cualquier nodo cuyo parent_id apunta hacia arriba en el árbol.
+        """
+        descendants = set()
+        
+        # Buscar todos los checkpoints que tienen este como parent
+        for cp_id, checkpoint in self.checkpoints.items():
+            if checkpoint.parent_id == checkpoint_id:
+                descendants.add(cp_id)
+                # Recursivamente agregar los descendientes de este hijo
+                descendants.update(self._collect_descendants(cp_id))
+        
+        return descendants
+    
     def reset(self):
         """Resetea el grafo completamente"""
         self.checkpoints.clear()
@@ -295,3 +365,67 @@ class MazeGraph:
             'unexplored_directions': total_unexplored,
             'exploration_complete': total_unexplored == 0
         }
+    
+    def generate_route_code(self) -> str:
+        """
+        Genera código Python para el bot con la ruta a seguir.
+        Retorna string con código copiable.
+        """
+        # Ordenar checkpoints por ID
+        sorted_checkpoints = sorted(self.checkpoints.values(), key=lambda cp: cp.id)
+        
+        # Generar RUTA: recorrer en orden de IDs siguiendo las conexiones
+        ruta_steps = []
+        for checkpoint in sorted_checkpoints:
+            # Para cada conexión de este checkpoint
+            for direction, destination_id in sorted(checkpoint.connections.items(), key=lambda x: x[1]):
+                # Solo incluir si el destino tiene ID mayor (evitar duplicados)
+                if destination_id > checkpoint.id:
+                    ruta_steps.append((checkpoint.id, direction.value, destination_id))
+        
+        # Generar ESTADOS: mapear cada checkpoint a sus estados
+        estados = {}
+        for checkpoint in sorted_checkpoints:
+            estados[checkpoint.id] = {
+                'N': self._state_to_str(checkpoint.directions.get(Cardinal.NORTH, DirectionState.UNEXPLORED)),
+                'S': self._state_to_str(checkpoint.directions.get(Cardinal.SOUTH, DirectionState.UNEXPLORED)),
+                'E': self._state_to_str(checkpoint.directions.get(Cardinal.EAST, DirectionState.UNEXPLORED)),
+                'W': self._state_to_str(checkpoint.directions.get(Cardinal.WEST, DirectionState.UNEXPLORED)),
+            }
+        
+        # Formatear código Python
+        output = "# === RUTA GENERADA DESDE SERVIDOR ===\n"
+        output += "# Copiar y pegar en el código del bot\n\n"
+        
+        # RUTA
+        output += "# Lista de pasos: (checkpoint_actual, dirección, checkpoint_destino)\n"
+        output += "RUTA = [\n"
+        for actual, dir_str, destino in ruta_steps:
+            output += f"    ({actual}, '{dir_str}', {destino}),  # Paso: {actual} → {dir_str} → {destino}\n"
+        output += "]\n\n"
+        
+        # ESTADOS
+        output += "# Estados esperados en cada checkpoint (para validación sensores)\n"
+        output += "# BL=Blocked, EX=Explored, UN=Unexplored\n"
+        output += "ESTADOS = {\n"
+        for cp_id, states in estados.items():
+            output += f"    {cp_id}: {states},\n"
+        output += "}\n\n"
+        
+        # Instrucciones de uso
+        output += "# === USO EN EL BOT ===\n"
+        output += "# for paso, (actual, direccion, destino) in enumerate(RUTA):\n"
+        output += "#     validar_sensores(ESTADOS[actual])\n"
+        output += "#     moverse_en_direccion(direccion)\n"
+        output += "#     esperar_llegada_a_checkpoint(destino)\n"
+        
+        return output
+    
+    def _state_to_str(self, state: DirectionState) -> str:
+        """Convierte DirectionState a string corto"""
+        mapping = {
+            DirectionState.BLOCKED: 'BL',
+            DirectionState.EXPLORED: 'EX',
+            DirectionState.UNEXPLORED: 'UN'
+        }
+        return mapping.get(state, 'UN')

@@ -18,6 +18,55 @@ El sistema inicia con:
 
 ---
 
+## 🖱️ Controles Interactivos (Mouse)
+
+### Crear Checkpoints con Flechas
+
+Cada checkpoint muestra **flechas verdes** en las direcciones donde NO hay nodos conectados.
+
+```
+Ejemplo: CP#0 tiene flecha norte (sin conexión aún)
+
+    ↑ ← CLIC AQUÍ para crear CP#1 al norte
+    │
+   CP#0
+
+Al hacer clic en la flecha:
+  ✅ Crea nuevo checkpoint automáticamente
+  🔗 Lo conecta al checkpoint origen
+  🤖 El bot se mueve al nuevo checkpoint
+```
+
+### Toggle de Estados (Indicadores)
+
+Los círculos pequeños N/S/E/W muestran el estado de cada dirección:
+
+```
+Clic en el círculo:
+  🟡 UNEXPLORED → 🟢 EXPLORED → 🔴 BLOCKED → 🟡 (ciclo)
+  
+Equivale a: UPDATE <id> <dirección> <estado>
+```
+
+### Mover entre Checkpoints
+
+```
+Clic en el círculo grande del nodo:
+  → Mueve el bot a ese checkpoint (se vuelve verde)
+  
+Equivale a: MOVE <id>
+```
+
+### Otros Controles
+
+- **Tecla R**: RESET completo del grafo
+- **Drag con mouse**: Pan (mover vista)
+- **Rueda del mouse**: Zoom in/out
+- **Barra espaciadora**: Centrar en checkpoint actual
+- **ESC**: Salir
+
+---
+
 ## 📋 Comandos Básicos
 
 ### 1. Crear Checkpoints
