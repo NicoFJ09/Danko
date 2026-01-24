@@ -25,20 +25,20 @@ El sistema inicia con:
 ```
 Formato: <HEADING> <front> <left> <right>
 HEADING = N, S, E, W (hacia dónde mira el bot)
-Estados = UNEXPLORED, BLOCKED, EXPLORED (o U, B, E)
+Estados = UNEXPLORED/UN/U, EXPLORED/EX/E, BLOCKED/BL/B
 ```
 
 **Ejemplos:**
 
 ```bash
-# Checkpoint con apertura al este
-> N UNEXPLORED UNEXPLORED BLOCKED
+# Checkpoint con apertura al este (usando abreviaciones cortas)
+> N UN UN BL
 
-# Checkpoint con apertura norte y oeste  
+# Checkpoint con apertura norte y oeste (nombres completos)
 > E UNEXPLORED UNEXPLORED BLOCKED
 
 # Dead-end (todas bloqueadas excepto por donde llegó)
-> W BLOCKED BLOCKED BLOCKED
+> W BL BL BL
 ```
 
 ### 2. Marcar Dead-end
@@ -53,10 +53,13 @@ Estados = UNEXPLORED, BLOCKED, EXPLORED (o U, B, E)
 
 ```bash
 # Formato: UPDATE <id> <dirección> <estado>
-> UPDATE 2 E EXPLORED
+# Acepta cualquier variante: UN/EX/BL o U/E/B o nombres completos
 
-# Marcar que el norte está bloqueado en CP#1
-> UPDATE 1 N BLOCKED
+> UPDATE 2 E EX
+
+> UPDATE 1 N BL
+
+> UPDATE 0 W BLOCKED
 ```
 
 ### 4. Navegación
@@ -78,13 +81,13 @@ Estados = UNEXPLORED, BLOCKED, EXPLORED (o U, B, E)
 
 ### Prueba 1: Pasillo Lineal Simple
 
-```bash
-# Simula avanzar recto por un pasillo con paredes laterales
-
-> N UNEXPLORED BLOCKED BLOCKED
+```bas BL BL
 ✅ CP#1 creado | N-S conectados
 
-> N UNEXPLORED BLOCKED BLOCKED  
+> N UN BL BL  
+✅ CP#2 creado | N-S conectados
+
+> N BL BL BLKED  
 ✅ CP#2 creado | N-S conectados
 
 > N BLOCKED BLOCKED BLOCKED
@@ -104,19 +107,19 @@ CP#0 ─ CP#1 ─ CP#2 ─ CP#3 (💀)
 ```bash
 # Avanzar hasta intersección
 
-> N UNEXPLORED BLOCKED BLOCKED
+> N UN BL BL
 ✅ CP#1 creado
 
-> N UNEXPLORED UNEXPLORED BLOCKED
+> N UN UN BL
 ✅ CP#2 creado (intersección detectada: N y W abiertas)
 
 # Explorar oeste
-> W BLOCKED BLOCKED BLOCKED
+> W BL BL BL
 ✅ CP#3 creado (dead-end W)
 🔙 Backtrack a CP#2
 
 # Explorar norte
-> N BLOCKED BLOCKED BLOCKED
+> N BL BL BL
 ✅ CP#4 creado (dead-end N)
 ```
 
@@ -136,16 +139,16 @@ CP#0 ─ CP#1 ─ CP#2 ─ CP#3 (💀)
 ### Prueba 3: Cuadrado/Loop
 
 ```bash
-> N UNEXPLORED UNEXPLORED BLOCKED
+> N UN UN BL
 ✅ CP#1 | N y E abiertos
 
-> E UNEXPLORED BLOCKED UNEXPLORED
+> E UN BL UN
 ✅ CP#2 | E y S abiertos
 
-> S UNEXPLORED UNEXPLORED BLOCKED
+> S UN UN BL
 ✅ CP#3 | S y W abiertos
 
-> W UNEXPLORED BLOCKED UNEXPLORED
+> W UN BL UN
 ✅ CP#4 | W y N abiertos
 
 # Ahora todas las direcciones están exploradas
@@ -182,15 +185,15 @@ CP#4 ─ CP#3
 
 ```bash
 # Crear checkpoint con norte unexplored
-> N UNEXPLORED B B
+> N UN BL BL
 ✅ CP#1
 
 # Explorar norte, encontrar pared
-> N BLOCKED B B
+> N BL BL BL
 ✅ CP#2
 
 # Actualizar CP#1 para marcar que norte está bloqueado
-> UPDATE 1 N BLOCKED
+> UPDATE 1 N BL
 
 # CP#1 ahora muestra N en rojo (blocked)
 ```
@@ -284,7 +287,7 @@ Muestra información del grafo:
 Si algo no funciona:
 
 1. **Verifica heading**: Debe ser N, S, E o W
-2. **Verifica estados**: UNEXPLORED, BLOCKED, EXPLORED (o U, B, E)
+2. **Verifica estados**: Acepta UNEXPLORED/UN/U, EXPLORED/EX/E, BLOCKED/BL/B
 3. **Cuenta parámetros**: Deben ser 4 (heading + 3 estados)
 4. **Revisa terminal**: Los mensajes de error indican qué está mal
 
@@ -292,13 +295,14 @@ Si algo no funciona:
 
 ```bash
 > N U B        # ❌ Faltan parámetros
-❌ Comando inválido: expected 4 parts, got 3
+❌ Comando inválido
 
 > X U B B      # ❌ Heading inválido
 ❌ Dirección inválida: X
 
 > N MAYBE B B  # ❌ Estado inválido
 ❌ Estado inválido: MAYBE
+   Usa: UNEXPLORED/UN/U, EXPLORED/EX/E, BLOCKED/BL/B
 ```
 
 ---

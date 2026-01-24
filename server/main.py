@@ -43,8 +43,8 @@ class MazeVisualizer:
         print("   - Crear checkpoint: <HEADING> <front> <left> <right>")
         print("     HEADING = Dirección actual del bot (N/S/E/W)")
         print("     front/left/right = Estado de cada sensor")
-        print("     Estados: UNEXPLORED (U), BLOCKED (B), EXPLORED (E)")
-        print("     Ejemplo: N BLOCKED UNEXPLORED UNEXPLORED")
+        print("     Estados: UNEXPLORED/UN/U, EXPLORED/EX/E, BLOCKED/BL/B")
+        print("     Ejemplo: N BL UN UN  (norte bloqueado, izq/der sin explorar)")
         print("   - 'update <checkpoint_id> <direccion> <estado>' - Actualizar dirección")
         print("   - 'move <checkpoint_id>' - Mover a checkpoint")
         print("   - 'deadend' - Marcar checkpoint actual como dead-end")
@@ -143,21 +143,36 @@ class MazeVisualizer:
                     print(f"❌ Dirección inválida: {parts[2]}\n")
                     return
                 
-                state_str = parts[3]
+                state_str = parts[3].upper()
                 
+                # Mapear strings a estados (acepta múltiples variantes)
                 state_map = {
                     'UNEXPLORED': DirectionState.UNEXPLORED,
                     'EXPLORED': DirectionState.EXPLORED,
-                    'BLOCKED': DirectionState.BLOCKED
+                    'BLOCKED': DirectionState.BLOCKED,
+                    'UN': DirectionState.UNEXPLORED,
+                    'EX': DirectionState.EXPLORED,
+                    'BL': DirectionState.BLOCKED,
+                    'U': DirectionState.UNEXPLORED,
+                    'E': DirectionState.EXPLORED,
+                    'B': DirectionState.BLOCKED
                 }
                 
                 if state_str not in state_map:
                     print(f"❌ Estado inválido: {state_str}\n")
+                    print(f"   Usa: UNEXPLORED/UN/U, EXPLORED/EX/E, BLOCKED/BL/B\n")
                     return
                 
                 state = state_map[state_str]
                 self.graph.update_checkpoint_direction(checkpoint_id, direction, state)
-                print()
+                
+                # Mostrar confirmación con nombre completo
+                state_names = {
+                    DirectionState.UNEXPLORED: 'UNEXPLORED',
+                    DirectionState.EXPLORED: 'EXPLORED',
+                    DirectionState.BLOCKED: 'BLOCKED'
+                }
+                print(f"✅ Checkpoint #{checkpoint_id}: {direction.value} → {state_names[state]}\n")
             except (ValueError, AttributeError) as e:
                 print(f"❌ Comando inválido: {e}\n")
             return
@@ -173,23 +188,32 @@ class MazeVisualizer:
                     print(f"❌ Heading inválido: {cmd}\n")
                     return
                 
-                front_str = parts[1]
-                left_str = parts[2]
-                right_str = parts[3]
+                front_str = parts[1].upper()
+                left_str = parts[2].upper()
+                right_str = parts[3].upper()
                 
-                # Mapear strings a estados
+                # Mapear strings a estados (acepta múltiples variantes)
                 state_map = {
                     'UNEXPLORED': DirectionState.UNEXPLORED,
                     'EXPLORED': DirectionState.EXPLORED,
                     'BLOCKED': DirectionState.BLOCKED,
+                    'UN': DirectionState.UNEXPLORED,
+                    'EX': DirectionState.EXPLORED,
+                    'BL': DirectionState.BLOCKED,
                     'U': DirectionState.UNEXPLORED,
                     'E': DirectionState.EXPLORED,
                     'B': DirectionState.BLOCKED
                 }
                 
-                front_state = state_map.get(front_str, DirectionState.UNEXPLORED)
-                left_state = state_map.get(left_str, DirectionState.UNEXPLORED)
-                right_state = state_map.get(right_str, DirectionState.UNEXPLORED)
+                if front_str not in state_map or left_str not in state_map or right_str not in state_map:
+                    invalid = [s for s in [front_str, left_str, right_str] if s not in state_map]
+                    print(f"❌ Estado inválido: {', '.join(invalid)}\n")
+                    print(f"   Usa: UNEXPLORED/UN/U, EXPLORED/EX/E, BLOCKED/BL/B\n")
+                    return
+                
+                front_state = state_map[front_str]
+                left_state = state_map[left_str]
+                right_state = state_map[right_str]
                 
                 # Calcular dirección de llegada basándose en el heading anterior y el actual
                 # Si el bot gira, la dirección de llegada es opuesta al nuevo heading
