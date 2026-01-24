@@ -1,42 +1,43 @@
 """
-Configuration file for MazeRunner map simulator
-All tunable parameters in one place
+Configuration file for MazeRunner - Graph-based visualization
+Simplified settings for checkpoint-based maze representation
 """
 
-class MapConfig:
-    # ============ Detección de cambios ============
-    CONSISTENCY_THRESHOLD = 2  # cm - variación aceptable entre medidas consecutivas
-    CHANGE_THRESHOLD = 5       # cm - cambio mínimo para considerarlo significativo
-    CONFIRMATION_COUNT = 1     # cantidad de medidas consecutivas necesarias para confirmar cambio
+class Config:
+    # ============ Ventana ============
+    WINDOW_WIDTH = 1400
+    WINDOW_HEIGHT = 900
+    FPS = 60
     
-    # ============ Límites físicos del laberinto ============
-    MAX_VALID_DISTANCE = 100   # cm - cualquier lectura mayor es descartada como alucinación
-    WALL_THRESHOLD = 5         # cm - si distancia < 5cm es pared continua
-    
-    # ============ Grid y movimiento ============
-    CELL_SIZE = 20             # cm - tamaño nominal de una celda del grid
-    MOVEMENT_THRESHOLD = 10    # cm - movimiento acumulado necesario para cambiar de celda
-    
-    # ============ Visualización ============
-    WINDOW_WIDTH = 1200        # pixels
-    WINDOW_HEIGHT = 800        # pixels
-    CELL_PIXEL_SIZE = 40       # pixels - tamaño de cada celda en pantalla
+    # ============ Visualización de grafo ============
+    CHECKPOINT_SPACING = 100    # pixels - distancia entre checkpoints conectados
+    CHECKPOINT_RADIUS = 20      # pixels - radio del círculo del checkpoint
     
     # Colores (RGB)
-    COLOR_BG = (20, 20, 30)              # Fondo oscuro
-    COLOR_GRID = (50, 50, 60)            # Líneas del grid
-    COLOR_WALL = (255, 255, 255)         # Paredes blancas
-    COLOR_EXPLORED = (80, 120, 80)       # Celdas exploradas (verde oscuro)
-    COLOR_CURRENT = (100, 200, 255)      # Celda actual del bot (azul)
-    COLOR_PATH = (150, 150, 200)         # Trail del camino recorrido
+    COLOR_BG = (25, 25, 35)                    # Fondo oscuro
+    COLOR_CHECKPOINT_NORMAL = (100, 150, 200)  # Checkpoint normal (azul)
+    COLOR_CHECKPOINT_CURRENT = (255, 200, 50)  # Checkpoint actual (amarillo)
+    COLOR_CHECKPOINT_DEAD_END = (200, 80, 80)  # Dead-end (rojo)
+    COLOR_CONNECTION = (150, 150, 180)         # Conexión explorada (gris azulado)
     
-    # Cámara
-    INITIAL_ZOOM = 5.0         # Zoom inicial
-    ZOOM_SPEED = 0.1           # Velocidad de zoom con scroll
-    MIN_ZOOM = 0.2             # Zoom mínimo
-    MAX_ZOOM = 5.0             # Zoom máximo
-    PAN_SPEED = 1.0            # Velocidad de pan con drag
+    # Estados de dirección (para indicadores visuales)
+    COLOR_UNEXPLORED = (255, 255, 100)  # Amarillo - no explorado
+    COLOR_EXPLORED = (100, 255, 100)    # Verde - explorado
+    COLOR_BLOCKED = (255, 100, 100)     # Rojo - bloqueado
     
-    # ============ Debugging ============
-    DEBUG_MODE = True          # Mostrar info de debug en consola
-    SHOW_SENSOR_RAYS = True    # Dibujar rayos de sensores en el mapa
+    # Texto
+    COLOR_TEXT = (220, 220, 220)
+    COLOR_TEXT_DIM = (150, 150, 150)
+    FONT_SIZE = 18
+    FONT_SIZE_SMALL = 14
+    
+    # ============ Cámara ============
+    INITIAL_ZOOM = 1.0
+    ZOOM_SPEED = 0.15
+    MIN_ZOOM = 0.3
+    MAX_ZOOM = 3.0
+    
+    # ============ Debug ============
+    DEBUG_MODE = True           # Mostrar info de debug
+    SHOW_GRID = False           # Mostrar grid de fondo (opcional)
+    SHOW_IDS = True             # Mostrar IDs de checkpoints

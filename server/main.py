@@ -1,37 +1,59 @@
 """
-MazeRunner Map Simulator - Main Script
-Terminal input loop + real-time pygame visualization
+MazeRunner Graph Visualizer - Manual Input Mode
+Visualización de grafo de checkpoints con entrada manual por consola
 """
 
 import pygame
-import sys
-import threading
-from config import MapConfig
-from map.map_state import MapState
-from map.camera import Camera
-from map.renderer import MapRenderer
+from config import Config
+from graph_state import MazeGraph, DirectionState, Cardinal
+from simple_camera import SimpleCamera
+from graph_renderer import GraphRenderer
 
-class MapSimulator:
+
+class MazeVisualizer:
+    """Visualizador del grafo con input manual"""
+    
     def __init__(self):
-        # Initialize pygame
         pygame.init()
-        self.screen = pygame.display.set_mode((MapConfig.WINDOW_WIDTH, MapConfig.WINDOW_HEIGHT))
-        pygame.display.set_caption("MazeRunner - Map Simulator")
+        self.screen = pygame.display.set_mode((Config.WINDOW_WIDTH, Config.WINDOW_HEIGHT))
+        pygame.display.set_caption("MazeRunner - Graph Visualizer (Manual Input)")
         self.clock = pygame.time.Clock()
         
-        # Initialize components
-        self.map_state = MapState()
-        self.camera = Camera(MapConfig.WINDOW_WIDTH, MapConfig.WINDOW_HEIGHT)
-        self.renderer = MapRenderer(self.screen, self.camera, self.map_state)
+        # Sistema de grafo
+        self.graph = MazeGraph()
         
-        # Center camera on starting position
-        start_x, start_y = self.renderer.cell_to_world(0, 0)
-        self.camera.center_on(start_x, start_y)
+        # Cámara y renderer
+        self.camera = SimpleCamera(Config.WINDOW_WIDTH, Config.WINDOW_HEIGHT)
+        self.renderer = GraphRenderer(self.screen, self.camera, self.graph)
+        
+        # Centrar en checkpoint inicial
+        self.camera.center_on(0, 0)
         
         self.running = True
+        
+        # Estado para comandos
+        self.current_heading = Cardinal.NORTH
+        
+        print("\n" + "=" * 70)
+        print("🤖 MAZERUNNER - VISUALIZADOR DE GRAFO")
+        print("=" * 70)
+        print("\n📍 Sistema iniciado con Checkpoint #0")
+        print(f"🧭 Heading inicial: {self.current_heading.value}")
+        print("\n💡 COMANDOS DISPONIBLES:")
+        print("   - Para crear checkpoint: <dirección> <front> <left> <right>")
+        print("     Ejemplo: N BLOCKED UNEXPLORED UNEXPLORED")
+        print("   - Direcciones: N, S, E, W")
+        print("   - Estados: UNEXPLORED, EXPLORED, BLOCKED")
+        print("   - 'update <checkpoint_id> <direccion> <estado>' - Actualizar dirección")
+        print("   - 'move <checkpoint_id>' - Mover a checkpoint")
+        print("   - 'deadend' - Marcar checkpoint actual como dead-end")
+        print("   - 'stats' - Ver estadísticas")
+        print("   - 'reset' - Resetear grafo")
+        print("   - 'quit' - Salir")
+        print("\n⌨️  Esperando comandos...\n")
     
     def handle_events(self):
-        """Handle pygame events"""
+        """Maneja eventos de pygame"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
@@ -43,7 +65,7 @@ class MapSimulator:
                 self.camera.handle_mouse_up(event.pos, event.button)
             
             elif event.type == pygame.MOUSEMOTION:
-                self.camera.handle_mouse_motion(event.pos, event.rel)
+                self.camera.handle_mouse_motion(event.pos)
             
             elif event.type == pygame.MOUSEWHEEL:
                 self.camera.handle_mouse_wheel(event.y)
@@ -52,113 +74,187 @@ class MapSimulator:
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
                 elif event.key == pygame.K_SPACE:
-                    # Center on bot
-                    bot_x, bot_y = self.renderer.cell_to_world(*self.map_state.bot_cell)
-                    self.camera.center_on(bot_x, bot_y)
+                    # Centrar en checkpoint actual
+                    current = self.graph.get_current_checkpoint()
+                    self.camera.center_on(current.render_x, current.render_y)
+                    print(f"📍 Centrado en Checkpoint #{current.id}")
+    
+    def process_command(self, command: str):
+        """Procesa comando de entrada del usuario"""
+        parts = command.strip().upper().split()
+        
+        if not parts:
+            return
+        
+        cmd = parts[0]
+        
+        # Quit
+        if cmd in ['QUIT', 'EXIT', 'Q']:
+            self.running = False
+            return
+        
+        # Reset
+        if cmd in ['RESET', 'R']:
+            self.graph.reset()
+            self.current_heading = Cardinal.NORTH
+            self.camera.center_on(0, 0)
+            print("🔄 Grafo reseteado\n")
+            return
+        
+        # Stats
+        if cmd in ['STATS', 'S']:
+            stats = self.graph.get_stats()
+            print("\n📊 ESTADÍSTICAS:")
+            print(f"   Total checkpoints: {stats['total_checkpoints']}")
+            print(f"   Dead-ends: {stats['dead_ends']}")
+            print(f"   Direcciones sin explorar: {stats['unexplored_directions']}")
+            print(f"   Exploración completa: {'✅ SÍ' if stats['exploration_complete'] else '❌ NO'}\n")
+            return
+        
+        # Dead-end
+        if cmd in ['DEADEND', 'D']:
+            current = self.graph.get_current_checkpoint()
+            self.graph.mark_as_dead_end(current.id)
+            return
+        
+        # Move to checkpoint
+        if cmd == 'MOVE' and len(parts) >= 2:
+            try:
+                checkpoint_id = int(parts[1])
+                if checkpoint_id in self.graph.checkpoints:
+                    self.graph.set_current_checkpoint(checkpoint_id)
+                    current = self.graph.get_current_checkpoint()
+                    self.camera.center_on(current.render_x, current.render_y)
+                    print(f"🤖 Movido a Checkpoint #{checkpoint_id}\n")
+                else:
+                    print(f"❌ Checkpoint #{checkpoint_id} no existe\n")
+            except ValueError:
+                print("❌ ID inválido\n")
+            return
+        
+        # Update direction of existing checkpoint
+        if cmd == 'UPDATE' and len(parts) >= 4:
+            try:
+                checkpoint_id = int(parts[1])
+                direction = Cardinal.from_string(parts[2])
+                state_str = parts[3]
+                
+                state_map = {
+                    'UNEXPLORED': DirectionState.UNEXPLORED,
+                    'EXPLORED': DirectionState.EXPLORED,
+                    'BLOCKED': DirectionState.BLOCKED
+                }
+                
+                if state_str not in state_map:
+                    print(f"❌ Estado inválido: {state_str}\n")
+                    return
+                
+                state = state_map[state_str]
+                self.graph.update_checkpoint_direction(checkpoint_id, direction, state)
+                print()
+            except (ValueError, AttributeError) as e:
+                print(f"❌ Comando inválido: {e}\n")
+            return
+        
+        # Crear nuevo checkpoint: <DIRECCION> <FRONT> <LEFT> <RIGHT>
+        # Ejemplo: N BLOCKED UNEXPLORED UNEXPLORED
+        if cmd in ['N', 'S', 'E', 'W'] and len(parts) >= 4:
+            try:
+                direction = Cardinal.from_string(cmd)
+                front_str = parts[1]
+                left_str = parts[2]
+                right_str = parts[3]
+                
+                # Mapear strings a estados
+                state_map = {
+                    'UNEXPLORED': DirectionState.UNEXPLORED,
+                    'EXPLORED': DirectionState.EXPLORED,
+                    'BLOCKED': DirectionState.BLOCKED,
+                    'U': DirectionState.UNEXPLORED,
+                    'E': DirectionState.EXPLORED,
+                    'B': DirectionState.BLOCKED
+                }
+                
+                front_state = state_map.get(front_str, DirectionState.UNEXPLORED)
+                left_state = state_map.get(left_str, DirectionState.UNEXPLORED)
+                right_state = state_map.get(right_str, DirectionState.UNEXPLORED)
+                
+                # Crear checkpoint
+                current = self.graph.get_current_checkpoint()
+                new_checkpoint = self.graph.create_checkpoint(
+                    parent_id=current.id,
+                    arrival_direction=direction,
+                    front_state=front_state,
+                    left_state=left_state,
+                    right_state=right_state,
+                    current_heading=direction
+                )
+                
+                # Mover a nuevo checkpoint
+                self.graph.set_current_checkpoint(new_checkpoint.id)
+                self.current_heading = direction
+                
+                # Centrar cámara
+                self.camera.center_on(new_checkpoint.render_x, new_checkpoint.render_y)
+                
+                print(f"🧭 Heading actualizado: {direction.value}")
+                print(f"🤖 Ahora en Checkpoint #{new_checkpoint.id}\n")
+                
+            except Exception as e:
+                print(f"❌ Error al crear checkpoint: {e}")
+                print("Formato: <DIRECCION> <FRONT> <LEFT> <RIGHT>")
+                print("Ejemplo: N BLOCKED UNEXPLORED UNEXPLORED\n")
+            return
+        
+        # Comando no reconocido
+        print(f"❌ Comando no reconocido: {command}")
+        print("Escribe 'quit' para salir o usa los comandos mostrados arriba\n")
     
     def update(self):
-        """Update game state"""
-        pass  # Map updates happen when new sensor data comes in
+        """Actualización del estado"""
+        pass
     
     def render(self):
-        """Render the map"""
+        """Renderiza el grafo"""
         self.renderer.draw()
         pygame.display.flip()
     
-    def run_visualization(self):
-        """Main visualization loop (runs in main thread)"""
-        print("\n🎮 Pygame window opened")
-        print("💡 Use mouse to pan/zoom, SPACE to center on bot, ESC to quit\n")
+    def run(self):
+        """Loop principal"""
+        import threading
         
+        def input_thread():
+            """Thread para recibir input sin bloquear pygame"""
+            while self.running:
+                try:
+                    command = input("> ")
+                    if command:
+                        self.process_command(command)
+                except EOFError:
+                    break
+                except Exception as e:
+                    print(f"❌ Error: {e}\n")
+        
+        # Iniciar thread de input
+        input_handler = threading.Thread(target=input_thread, daemon=True)
+        input_handler.start()
+        
+        # Loop principal de pygame
         while self.running:
             self.handle_events()
             self.update()
             self.render()
-            self.clock.tick(60)  # 60 FPS
+            self.clock.tick(Config.FPS)
         
         pygame.quit()
-        print("\n👋 Visualization closed")
-    
-    def input_loop(self):
-        """Terminal input loop (runs in separate thread)"""
-        print("\n" + "="*60)
-        print("🤖 MazeRunner Map Simulator - Terminal Input")
-        print("="*60)
-        print("\nEnter sensor data to update the map.")
-        print("Format: <heading> <front_cm> <left_cm> <right_cm>")
-        print("Example: N 15 5 25")
-        print("Valid headings: N, S, E, W")
-        print("Type 'quit' to exit\n")
-        
-        while self.running:
-            try:
-                # Get input
-                user_input = input("📡 Enter sensor data: ").strip()
-                
-                if user_input.lower() == 'quit':
-                    self.running = False
-                    break
-                
-                # Parse input
-                parts = user_input.split()
-                if len(parts) != 4:
-                    print("❌ Invalid format. Use: <heading> <front> <left> <right>")
-                    print("   Example: N 15 5 25\n")
-                    continue
-                
-                heading = parts[0].upper()
-                if heading not in ['N', 'S', 'E', 'W']:
-                    print("❌ Invalid heading. Use: N, S, E, or W\n")
-                    continue
-                
-                try:
-                    front = float(parts[1])
-                    left = float(parts[2])
-                    right = float(parts[3])
-                except ValueError:
-                    print("❌ Distances must be numbers\n")
-                    continue
-                
-                # Update map with new sensor data
-                print(f"\n📊 Processing: heading={heading}, front={front}cm, left={left}cm, right={right}cm")
-                events = self.map_state.update_sensors(front, left, right, heading)
-                
-                # Report events
-                if events['new_walls']:
-                    print(f"   🧱 New walls detected: {len(events['new_walls'])}")
-                if events['new_paths']:
-                    print(f"   🚪 New paths detected: {len(events['new_paths'])}")
-                if events['movement']:
-                    print(f"   🤖 Bot moved to {self.map_state.bot_cell}")
-                
-                print(f"   ✅ Map updated\n")
-                
-            except EOFError:
-                # Handle Ctrl+D
-                self.running = False
-                break
-            except KeyboardInterrupt:
-                # Handle Ctrl+C
-                print("\n\n⚠️  Interrupted by user")
-                self.running = False
-                break
-            except Exception as e:
-                print(f"❌ Error: {e}\n")
-    
-    def run(self):
-        """Start both visualization and input loops"""
-        # Start input loop in separate thread
-        input_thread = threading.Thread(target=self.input_loop, daemon=True)
-        input_thread.start()
-        
-        # Run visualization in main thread
-        self.run_visualization()
-        
-        print("\n✅ Simulator stopped")
+        print("\n👋 Visualizador cerrado")
+
 
 def main():
-    simulator = MapSimulator()
-    simulator.run()
+    visualizer = MazeVisualizer()
+    visualizer.run()
+
 
 if __name__ == "__main__":
     main()
+
