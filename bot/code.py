@@ -18,6 +18,10 @@ RAD_A_GRADOS = 180 / math.pi
 UMBRAL_FRONTAL_BLOQUEADO = 6 # 6 cm antes de considerar frente como pared
 UMBRAL_LATERAL_BLOQUEADO = 30 # cualquier numero mayor a 30 es libre
 
+# Control de corrección por paredes
+UMBRAL_ZONA_MUERTA = 2.0  # cm - No corregir si error < umbral
+GANANCIA_PARED = 0.015    # Corrección cuando error >= umbral
+
 # ===== VARIABLES GLOBALES =====
 drift = 0.0
 heading = "N"
@@ -54,39 +58,51 @@ ESTADOS = {
 
 # ===== FUNCIONES =====
 def calibrar_drift(sensor, segundos=2):
-    """Calibra el drift del giroscopio - código de Tomás"""
+    """Calibra el drift del giroscopio"""
     print("Calibrando giroscopio...")
     suma = 0
     muestras = 0
     t0 = time.monotonic()
     
-    while time.monotonic() - t0 < segundos: # mientras que tiempo actualizado menos tiempo inicial sea menor a segundos
-        data = sensor.gyro[2] # leyendo eje z del giroscopio
-        # evita promediar saltos que son error
-        if abs(data) < 0.008: #mientras sea menor al umbral acumula la desviacion
+    while time.monotonic() - t0 < segundos:
+        data = sensor.gyro[2]
+        if abs(data) < 0.008:
             suma += sensor.gyro[2]
             muestras += 1
         time.sleep(0.005)
     
-    drift = suma / muestras # promedio de todas las desviaciones
-    print(f"Drift promedio: {drift:.4f} rad/s")
+    if muestras == 0:
+        print("⚠️  No se pudo calibrar - usando drift = 0")
+        return 0.0
+    
+    drift = suma / muestras
+    print(f"Drift: {drift:.4f} rad/s")
     return drift
 
 def leer_sensores():
     """Lee los tres sensores ultrasónicos"""
     global last_frente, last_izq, last_der
     
-    f = sonar_front.dist_cm()
-    if f != -1 and f > 0:
-        last_frente = f
+    try:
+        f = sonar_front.dist_cm()
+        if f != -1 and f > 0:
+            last_frente = f
+    except:
+        pass
     
-    i = sonar_left.dist_cm()
-    if i != -1 and i > 0:
-        last_izq = i
+    try:
+        i = sonar_left.dist_cm()
+        if i != -1 and i > 0:
+            last_izq = i
+    except:
+        pass
     
-    d = sonar_right.dist_cm()
-    if d != -1 and d > 0:
-        last_der = d
+    try:
+        d = sonar_right.dist_cm()
+        if d != -1 and d > 0:
+            last_der = d
+    except:
+        pass
     
     time.sleep(0.005) 
     return {'frente': last_frente, 'izq': last_izq, 'der': last_der}
@@ -119,8 +135,10 @@ def verificar_estado(sensores_globales, patron_esperado, heading):
     
     return True
 
-def girar_grados(sensor, grados, drift, velocidad=0.25):
-    """Gira usando el giroscopio"""
+def girar_grados(sensor, grados, velocidad=0.25):
+    """Gira usando el giroscopio - usa drift global"""
+    global drift
+    
     if abs(grados) < 2:
         print("  ⏭️  Giro pequeño, omitiendo")
         return
@@ -157,7 +175,7 @@ def girar_grados(sensor, grados, drift, velocidad=0.25):
 
 def girar_a_direccion(direccion_objetivo):
     """Gira a una dirección cardinal"""
-    global heading, drift
+    global heading
     
     grados_actual = LETRA_A_GRADOS[heading]
     grados_objetivo = LETRA_A_GRADOS[direccion_objetivo]
@@ -169,44 +187,35 @@ def girar_a_direccion(direccion_objetivo):
         diff += 360
     
     print(f"\n🧭 Girando {heading} → {direccion_objetivo} ({diff:+.0f}°)")
-    girar_grados(sensor, diff, drift)
+    girar_grados(sensor, diff)  # ✅ Sin pasar drift
     heading = direccion_objetivo
 
-def avanzar_hasta_checkpoints(checkpoints_destino, velocidad=0.45, Kp=0.20, Ki=0.05, Kd=0.10):
-
+def avanzar_hasta_checkpoints(checkpoints_destino, velocidad=0.40):
     """
-    Control PID mejorado con mejor corrección de deriva
+    Navegación basada en corrección por paredes con ganancia dual
     """
-    global checkpoint_actual, drift, heading
+    global checkpoint_actual, heading
     
-    # ===== PARÁMETROS PID MEJORADOS =====
     velocidad_base = abs(velocidad)
     direccion = 1 if velocidad > 0 else -1
     
-    angulo_acumulado = 0.0
-    error_anterior = 0.0
-    error_integral = 0.0
-    max_correccion = 0.15  # ✅ Aumentado ligeramente
+    # Pared seleccionada (se fija al inicio y se mantiene)
+    pared_elegida = None  # 'izq' o 'der'
+    distancia_referencia = None
     
-    # ✅ CAMBIOS CLAVE:
-    zona_muerta = 0.5        # ✅ Reducido de 3.0° a 1.0°
-    limite_integral = 30     # ✅ Aumentado de 10 a 30
+    umbral_minimo_pared = 20.0  # Si ambas > 20cm, no corregir
+    umbral_cambio_brusco = 10.0  # Cambio radical para re-seleccionar
     
-    print(f"\n🚀 Avanzando hacia: {checkpoints_destino}")
-    print(f"⚙️  PID MEJORADO: Kp={Kp}, Ki={Ki}, Kd={Kd}")
-    print(f"   Zona muerta: ±{zona_muerta}° | Integral: ±{limite_integral}\n")
-    
-    t_anterior = time.monotonic()
     t0 = time.monotonic()
     checkpoint_idx = 0
+    iteracion = 0
+    t_ultima_iter = time.monotonic()  # Para medir latencia entre iteraciones
     
     while checkpoint_idx < len(checkpoints_destino):
-        t_actual = time.monotonic()
-        dt = t_actual - t_anterior
-        t_anterior = t_actual
-        
-        if dt == 0:
-            continue
+        iteracion += 1
+        t_iter_actual = time.monotonic()
+        dt_iter = t_iter_actual - t_ultima_iter  # Tiempo desde última iteración
+        t_ultima_iter = t_iter_actual
         
         # ===== LEER SENSORES =====
         sensores_locales = leer_sensores()
@@ -215,89 +224,122 @@ def avanzar_hasta_checkpoints(checkpoints_destino, velocidad=0.45, Kp=0.20, Ki=0
         checkpoint_objetivo = checkpoints_destino[checkpoint_idx]
         patron_esperado = ESTADOS[checkpoint_objetivo]
         
-        # Verificar checkpoint
+        # ===== VERIFICAR CHECKPOINT =====
         if verificar_estado(sensores_globales, patron_esperado, heading):
             checkpoint_actual = checkpoint_objetivo
-            tiempo = time.monotonic() - t0
-            
-            print(f"\n✅ CHECKPOINT {checkpoint_objetivo} detectado ({tiempo:.1f}s)")
-            print(f"   Sensores: F={sensores_locales['frente']:.1f} I={sensores_locales['izq']:.1f} D={sensores_locales['der']:.1f}")
+            print(f"\n✅ CP{checkpoint_objetivo}")
             
             checkpoint_idx += 1
             
             if checkpoint_idx >= len(checkpoints_destino):
                 ib.motor_1.throttle = 0
                 ib.motor_2.throttle = 0
-                print(f"🛑 Fin del segmento\n")
                 return
             
-            print(f"➡️  Continúa hacia CP{checkpoints_destino[checkpoint_idx]}...\n")
+            # Resetear pared seleccionada para nuevo tramo
+            pared_elegida = None
+            distancia_referencia = None
+            
             time.sleep(0.2)
+
+        # ===== SELECCIONAR PARED (solo una vez al inicio o si se pierde) =====
+        if pared_elegida is None:
+            # Elegir la pared MÁS LEJANA si alguna está < 20cm
+            if sensores_locales['izq'] < umbral_minimo_pared or sensores_locales['der'] < umbral_minimo_pared:
+                if sensores_locales['izq'] < umbral_minimo_pared and sensores_locales['der'] < umbral_minimo_pared:
+                    # Ambas disponibles → elegir la más lejana
+                    if sensores_locales['izq'] > sensores_locales['der']:
+                        pared_elegida = 'izq'
+                        distancia_referencia = sensores_locales['izq']
+                    else:
+                        pared_elegida = 'der'
+                        distancia_referencia = sensores_locales['der']
+                    print(f"   📏 Pared seleccionada: {pared_elegida.upper()} (Ref: {distancia_referencia:.1f}cm)")
+                elif sensores_locales['izq'] < umbral_minimo_pared:
+                    pared_elegida = 'izq'
+                    distancia_referencia = sensores_locales['izq']
+                    print(f"   📏 Pared seleccionada: IZQ (Ref: {distancia_referencia:.1f}cm)")
+                else:
+                    pared_elegida = 'der'
+                    distancia_referencia = sensores_locales['der']
+                    print(f"   📏 Pared seleccionada: DER (Ref: {distancia_referencia:.1f}cm)")
         
-        # ===== CONTROL PID MEJORADO =====
+        # ===== DETECTAR PÉRDIDA DE PARED (cambio radical) =====
+        if pared_elegida is not None and distancia_referencia is not None:
+            dist_actual_pared = sensores_locales[pared_elegida]
+            
+            # Si cambio brusco o pared muy lejos → re-seleccionar
+            if abs(dist_actual_pared - distancia_referencia) > umbral_cambio_brusco or dist_actual_pared > umbral_minimo_pared:
+                print(f"   🔄 Pared {pared_elegida.upper()} perdida: {distancia_referencia:.1f} → {dist_actual_pared:.1f}cm")
+                pared_elegida = None
+                distancia_referencia = None
+
+        # ===== CALCULAR CORRECCIÓN =====
+        correccion = 0.0
+        error_pared = 0.0
         
-        # Leer velocidad angular
-        vel_angular = sensor.gyro[2] - drift
+        # Timestamp relativo desde inicio
+        t_actual = time.monotonic() - t0
         
-        # Acumular ángulo
-        angulo_acumulado += vel_angular * dt * RAD_A_GRADOS
+        if pared_elegida is not None and distancia_referencia is not None:
+            dist_actual = sensores_locales[pared_elegida]
+            error_pared = dist_actual - distancia_referencia  # Error ABSOLUTO respecto a referencia
+            
+            # ZONA MUERTA: sin corrección si error < umbral, con corrección si error >= umbral
+            if abs(error_pared) >= UMBRAL_ZONA_MUERTA:
+                # Corrección: mantener distancia constante
+                if pared_elegida == 'izq':
+                    # Si error > 0: más lejos → acercar (girar izq) → corr negativa
+                    # Si error < 0: más cerca → alejar (girar der) → corr positiva
+                    correccion = -error_pared * GANANCIA_PARED
+                else:  # 'der'
+                    # Si error > 0: más lejos → acercar (girar der) → corr positiva
+                    # Si error < 0: más cerca → alejar (girar izq) → corr negativa
+                    correccion = +error_pared * GANANCIA_PARED
+                
+                # Debug frecuente (cada 3 iteraciones)
+                if iteracion % 3 == 0:
+                    print(f"[{t_actual:6.2f}s | #{iteracion:03d} | Δt:{dt_iter*1000:4.0f}ms] 🧱{pared_elegida.upper()} Ref:{distancia_referencia:.1f} Act:{dist_actual:.1f} Err:{error_pared:+.2f}cm Corr:{correccion:+.3f}")
+            else:
+                # Zona muerta - sin corrección, motores iguales
+                if iteracion % 3 == 0:
+                    print(f"[{t_actual:6.2f}s | #{iteracion:03d} | Δt:{dt_iter*1000:4.0f}ms] ✅{pared_elegida.upper()} Ref:{distancia_referencia:.1f} Act:{dist_actual:.1f} Err:{error_pared:+.2f}cm ZONA_MUERTA")
         
-        # ERROR = desviación del rumbo deseado (cero)
-        error = angulo_acumulado
-        
-        # ✅ Zona muerta REDUCIDA - solo ignora vibraciones menores
-        if abs(error) < zona_muerta:
-            error_para_correccion = 0
         else:
-            error_para_correccion = error
+            # SIN pared seleccionada - avanzar recto
+            if iteracion % 3 == 0:
+                print(f"[{t_actual:6.2f}s | #{iteracion:03d} | Δt:{dt_iter*1000:4.0f}ms] ⬆️ SIN_PARED (I:{sensores_locales['izq']:.1f} D:{sensores_locales['der']:.1f}) - Recto")
         
-        # ✅ Integral SIEMPRE acumula (incluso en zona muerta)
-        # Esto asegura que el error pequeño persistente se corrija
-        error_integral += error * dt
+        # Limitar corrección máxima
+        correccion_sin_limitar = correccion
+        correccion = max(-0.20, min(0.20, correccion))
         
-        # Limitar integral con rango MÁS AMPLIO
-        error_integral = max(-limite_integral, min(limite_integral, error_integral))
-        
-        # Término derivativo
-        error_derivativo = (error - error_anterior) / dt if dt > 0 else 0
-        
-        # ✅ Control PID usa error_para_correccion (con zona muerta)
-        # pero la integral usa el error REAL
-        correccion = Kp * error_para_correccion + Ki * error_integral + Kd * error_derivativo
-        
-        # Límite de corrección
-        correccion = max(-max_correccion, min(max_correccion, correccion))
-        
+        if abs(correccion_sin_limitar) > 0.20:
+            print(f"[{t_actual:6.2f}s] ⚠️ LÍMITE! {correccion_sin_limitar:+.3f} → {correccion:+.3f}")
+
         # ===== AJUSTE DE VELOCIDADES =====
         v1 = velocidad_base * direccion + correccion
         v2 = velocidad_base * direccion - correccion
         
         # Saturación
+        v1_sin_saturar = v1
+        v2_sin_saturar = v2
         v1 = max(-1, min(1, v1))
         v2 = max(-1, min(1, v2))
+        
+        # Avisar si hubo saturación
+        if abs(v1_sin_saturar) > 1.0 or abs(v2_sin_saturar) > 1.0:
+            print(f"[{t_actual:6.2f}s] ⚠️ SATURACIÓN! M1:{v1_sin_saturar:.2f}→{v1:.2f} M2:{v2_sin_saturar:.2f}→{v2:.2f}")
+        
+        # Mostrar velocidades cuando hay corrección significativa (cada 3 iter)
+        if abs(correccion) > 0.05 and iteracion % 3 == 0:
+            print(f"       → Motores: M1={v1:.2f} M2={v2:.2f}")
         
         ib.motor_1.throttle = v1
         ib.motor_2.throttle = v2
         
-        error_anterior = error
-        
-        # ===== DISPLAY =====
-        f_ok = "✅" if 1 < sensores_locales['frente'] < 350 else "❌"
-        i_ok = "✅" if 1 < sensores_locales['izq'] < 350 else "❌"
-        d_ok = "✅" if 1 < sensores_locales['der'] < 350 else "❌"
-        
-        if abs(angulo_acumulado) < zona_muerta:
-            estado = "⬆️ RECTO"
-        elif abs(error_integral) > 5:
-            estado = "🔧 INTEG"  # Integral está corrigiendo
-        elif abs(error) > 3:
-            estado = "🔄 CORR"
-        else:
-            estado = "↗️ LEVE"
-        
-        print(f"\r{estado} →CP{checkpoint_objetivo} | {f_ok}F:{sensores_locales['frente']:5.1f} {i_ok}I:{sensores_locales['izq']:5.1f} {d_ok}D:{sensores_locales['der']:5.1f} | Δθ:{angulo_acumulado:6.2f}° | I:{error_integral:6.2f} | M1:{v1:.2f} M2:{v2:.2f}", end="")
-        
         time.sleep(0.01)
+
 
 def agrupar_ruta_por_direccion(ruta):
     """Agrupa checkpoints consecutivos por dirección"""
@@ -322,8 +364,8 @@ def agrupar_ruta_por_direccion(ruta):
     return grupos
 
 def seguir_ruta():
-    """Sigue la ruta agrupada por dirección"""
-    global drift, checkpoint_actual, heading
+    """Sigue la ruta agrupada por dirección - SIN giroscopio"""
+    global checkpoint_actual, heading
     
     checkpoint_actual = 0
     heading = 'N'
@@ -332,52 +374,36 @@ def seguir_ruta():
     ib.motor_2.throttle = 0
     time.sleep(0.5)
     
-    # Calibrar (método de Tomás)
-    ib.pixel = (255, 0, 0)
-    print("\n⚠️  Robot completamente quieto para calibrar")
-    time.sleep(2)
-    drift = calibrar_drift(sensor, 5)
-    ib.pixel = (0, 0, 0)
-    
     # Agrupar ruta
     ruta_agrupada = agrupar_ruta_por_direccion(RUTA)
     
-    print(f"\n{'='*60}")
-    print(f"🗺️  NAVEGACIÓN ULTRA-SUAVE")
-    print(f"{'='*60}")
-    print(f"🎯 {len(ruta_agrupada)} segmentos\n")
+    print(f"\n🗺️  Navegando {len(ruta_agrupada)} segmentos\n")
     
     for idx, (origen, direccion, checkpoints) in enumerate(ruta_agrupada, 1):
-        print(f"{'='*60}")
-        print(f"📍 SEGMENTO {idx}/{len(ruta_agrupada)}")
-        print(f"   De: CP{origen} → CP{checkpoints[-1]}")
-        print(f"   Dirección: {direccion}")
-        print(f"{'='*60}")
-        
+        print(f"📍 Segmento {idx}: {direccion}")
         girar_a_direccion(direccion)
-        avanzar_hasta_checkpoints(checkpoints)
+        avanzar_hasta_checkpoints(checkpoints, velocidad=0.40)
     
     ib.motor_1.throttle = 0
     ib.motor_2.throttle = 0
     ib.pixel = (0, 255, 0)
-    
-    print(f"\n{'='*60}")
-    print(f"🎉 RUTA COMPLETADA")
-    print(f"{'='*60}\n")
+    print(f"\n🎉 Completado\n")
 
 # ===== PROGRAMA PRINCIPAL =====
 if __name__ == "__main__":
-    print("\n" + "="*60)
-    print("🤖 NAVEGACIÓN PID ULTRA-SUAVE")
-    print("="*60)
-    print("Ganancias mínimas para eliminar wiggle completamente\n")
+    print("\n🤖 Iniciando...")
     
     ib.motor_1.throttle = 0
     ib.motor_2.throttle = 0
     ib.pixel = (0, 0, 0)
     time.sleep(1)
     
-    print("✅ Robot listo\n")
+    ib.pixel = (255, 0, 0)
+    print("Calibrando (quieto)...")
+    time.sleep(2)
+    drift = calibrar_drift(sensor, 5)
+    ib.pixel = (0, 0, 0)
+    print("Listo\n")
     
     try:
         seguir_ruta()
