@@ -225,23 +225,43 @@ class Grid:
             # Mapear direcciones del grid a cardinales
             # Arriba en grid
             if direction_converter:
-                # Simular movimientos en cada dirección para obtener la cardinal
-                up_cardinal = direction_converter(row, col, row - 1, col) if row > 0 else None
-                down_cardinal = direction_converter(row, col, row + 1, col) if row < self.rows - 1 else None
-                right_cardinal = direction_converter(row, col, row, col + 1) if col < self.cols - 1 else None
-                left_cardinal = direction_converter(row, col, row, col - 1) if col > 0 else None
+                # Crear mapeo de direcciones grid → cardinal
+                # IMPORTANTE: Calcular TODAS las direcciones, incluso en bordes
+                grid_to_cardinal = {}
                 
-                # Asignar estados
+                # Usar valores ficticios en bordes para mantener consistencia
+                # Norte en grid (arriba)
+                if row > 0:
+                    grid_to_cardinal[Cardinal.NORTH] = direction_converter(row, col, row - 1, col)
+                else:
+                    # En borde superior, simular movimiento hacia arriba
+                    grid_to_cardinal[Cardinal.NORTH] = direction_converter(0, 0, -1, 0)
+                
+                # Sur en grid (abajo)
+                if row < self.rows - 1:
+                    grid_to_cardinal[Cardinal.SOUTH] = direction_converter(row, col, row + 1, col)
+                else:
+                    grid_to_cardinal[Cardinal.SOUTH] = direction_converter(0, 0, 1, 0)
+                
+                # Este en grid (derecha)
+                if col < self.cols - 1:
+                    grid_to_cardinal[Cardinal.EAST] = direction_converter(row, col, row, col + 1)
+                else:
+                    grid_to_cardinal[Cardinal.EAST] = direction_converter(0, 0, 0, 1)
+                
+                # Oeste en grid (izquierda)
+                if col > 0:
+                    grid_to_cardinal[Cardinal.WEST] = direction_converter(row, col, row, col - 1)
+                else:
+                    grid_to_cardinal[Cardinal.WEST] = direction_converter(0, 0, 0, -1)
+                
+                # Asignar estados para TODAS las cardinales
                 for cardinal in ['N', 'S', 'E', 'W']:
-                    # Encontrar qué dirección del grid corresponde a esta cardinal
-                    if up_cardinal == cardinal:
-                        estados[cardinal] = 'BL' if cell.walls[Cardinal.NORTH] else 'EX'
-                    elif down_cardinal == cardinal:
-                        estados[cardinal] = 'BL' if cell.walls[Cardinal.SOUTH] else 'EX'
-                    elif right_cardinal == cardinal:
-                        estados[cardinal] = 'BL' if cell.walls[Cardinal.EAST] else 'EX'
-                    elif left_cardinal == cardinal:
-                        estados[cardinal] = 'BL' if cell.walls[Cardinal.WEST] else 'EX'
+                    # Buscar qué dirección del grid corresponde a esta cardinal
+                    for grid_dir, card in grid_to_cardinal.items():
+                        if card == cardinal:
+                            estados[cardinal] = 'BL' if cell.walls[grid_dir] else 'EX'
+                            break
             else:
                 # Fallback: mapeo directo
                 estados['N'] = 'BL' if cell.walls[Cardinal.NORTH] else 'EX'
